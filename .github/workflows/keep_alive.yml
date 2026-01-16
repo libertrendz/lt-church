@@ -13,5 +13,5 @@ jobs:
       - name: Ping Database via Edge Function ou REST API
         run: |
           curl -X GET "https://dpsqiodxchdymxuhpbpx.supabase.co" \
-          -H "apikey: ${{ sb_secret_HM2ZbGPpWF1iypMtRJEs5A_20mjPcap }}" \
-          -H "Authorization: Bearer ${{ sb_secret_HM2ZbGPpWF1iypMtRJEs5A_20mjPcap }}"
+          -H "apikey: ${{ sb_publishable_8wH7v9kWb7DFMgVuLX5GBg_S9brbAup }}" \
+          -H "Authorization: Bearer ${{ sb_publishable_8wH7v9kWb7DFMgVuLX5GBg_S9brbAup }}"
