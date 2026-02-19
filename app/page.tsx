@@ -20,6 +20,9 @@ export default function HomePage() {
         <li>
           <a href="/departamentos">/departamentos</a>
         </li>
+        <li>
+          <a href="/departamentos-associar">/departamentos-associar</a>
+        </li>
       </ul>
     </main>
   );
