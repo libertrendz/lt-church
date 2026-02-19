@@ -12,7 +12,7 @@ export default function HomePage() {
           <a href="/login">/login</a>
         </li>
         <li>
-          <a href="/me">/me</a>
+          <a href="/meus-dados">/meus-dados</a>
         </li>
       </ul>
     </main>
