@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { supabaseBrowser } from "@/lib/supabase/client";
+import { supabaseBrowser } from "../../lib/supabase/client";
 
 export default function LoginPage() {
   const router = useRouter();
