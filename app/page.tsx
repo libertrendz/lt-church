@@ -11,6 +11,7 @@ export default function HomePage() {
         <li><a href="/congregacoes">/congregacoes</a></li>
         <li><a href="/departamentos">/departamentos</a></li>
         <li><a href="/membros/departamentos">/membros/departamentos</a></li>
+        <li><a href="/atividades">/atividades</a></li>
       </ul>
     </main>
   );
