@@ -1,3 +1,4 @@
+/* PATH: app/escalas/[escalaId]/page.tsx */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -100,7 +101,6 @@ export default function EscalaDetailPage() {
     const s = escalaRes.data as EscalaRow;
     setEscala(s);
 
-    // evento ligado
     if (s.evento_id) {
       const evRes = await supabase
         .from("agenda_eventos")
@@ -118,7 +118,6 @@ export default function EscalaDetailPage() {
       setEvento(null);
     }
 
-    // funcoes + membros
     const fRes = await supabase.from("funcoes").select("id, nome, ativa").order("nome", { ascending: true });
     if (fRes.error) {
       setErr(fRes.error.message);
@@ -135,7 +134,6 @@ export default function EscalaDetailPage() {
     }
     setMembros((mRes.data as MembroRow[]) ?? []);
 
-    // itens
     const iRes = await supabase
       .from("escala_itens")
       .select("id, funcao_id, membro_id, status, notas")
@@ -268,35 +266,17 @@ export default function EscalaDetailPage() {
 
       {!busy && escala ? (
         <>
-          <div
-            style={{
-              marginTop: 12,
-              padding: 16,
-              borderRadius: 16,
-              border: "1px solid #333",
-              background: "#0b0b0b"
-            }}
-          >
+          <div style={{ marginTop: 12, padding: 16, borderRadius: 16, border: "1px solid #333", background: "#0b0b0b" }}>
             <div style={{ fontWeight: 900 }}>
               {evento ? `${fmtLisbon(evento.starts_at)} · ${evento.titulo ?? "Evento"}` : "Evento: —"}
               {evento?.status === "cancelado" ? <span style={{ opacity: 0.8 }}> (cancelado)</span> : null}
             </div>
-
             <div style={{ marginTop: 6, opacity: 0.85 }}>
               Escala ID: <span style={{ opacity: 0.95 }}>{escala.id}</span>
             </div>
           </div>
 
-          {/* Add item */}
-          <div
-            style={{
-              marginTop: 14,
-              padding: 16,
-              borderRadius: 16,
-              border: "1px solid #333",
-              background: "#0b0b0b"
-            }}
-          >
+          <div style={{ marginTop: 14, padding: 16, borderRadius: 16, border: "1px solid #333", background: "#0b0b0b" }}>
             <h2 style={{ marginTop: 0, fontSize: 18 }}>Adicionar item</h2>
 
             <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr", maxWidth: 900 }}>
@@ -305,13 +285,7 @@ export default function EscalaDetailPage() {
                 <select
                   value={funcaoId}
                   onChange={(e) => setFuncaoId(e.target.value)}
-                  style={{
-                    padding: 10,
-                    borderRadius: 10,
-                    border: "1px solid #333",
-                    background: "#111",
-                    color: "#fff"
-                  }}
+                  style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
                 >
                   <option value="">—</option>
                   {funcoesAtivas.map((f) => (
@@ -327,13 +301,7 @@ export default function EscalaDetailPage() {
                 <select
                   value={membroId}
                   onChange={(e) => setMembroId(e.target.value)}
-                  style={{
-                    padding: 10,
-                    borderRadius: 10,
-                    border: "1px solid #333",
-                    background: "#111",
-                    color: "#fff"
-                  }}
+                  style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
                 >
                   <option value="">—</option>
                   {membrosAtivos.map((m) => (
@@ -351,13 +319,7 @@ export default function EscalaDetailPage() {
                 <select
                   value={status}
                   onChange={(e) => setStatus(e.target.value as ItemRow["status"])}
-                  style={{
-                    padding: 10,
-                    borderRadius: 10,
-                    border: "1px solid #333",
-                    background: "#111",
-                    color: "#fff"
-                  }}
+                  style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
                 >
                   <option value="confirmado">confirmado</option>
                   <option value="pendente">pendente</option>
@@ -370,13 +332,7 @@ export default function EscalaDetailPage() {
                 <input
                   value={notas}
                   onChange={(e) => setNotas(e.target.value)}
-                  style={{
-                    padding: 10,
-                    borderRadius: 10,
-                    border: "1px solid #333",
-                    background: "#111",
-                    color: "#fff"
-                  }}
+                  style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
                 />
               </label>
             </div>
@@ -399,7 +355,6 @@ export default function EscalaDetailPage() {
             </button>
           </div>
 
-          {/* Items list */}
           <div style={{ marginTop: 14 }}>
             <h2 style={{ fontSize: 18 }}>Itens</h2>
 
