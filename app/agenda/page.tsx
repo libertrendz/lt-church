@@ -1,11 +1,12 @@
+/* PATH: app/agenda/page.tsx */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabase/client";
 
-type AtividadeRow = { id: string; nome: string; ativo: boolean };
-type CongregacaoRow = { id: string; nome: string; ativa: boolean };
+type AtividadeRow = { id: string; nome: string; ativo?: boolean };
+type CongregacaoRow = { id: string; nome: string; ativa?: boolean };
 
 type EventoRow = {
   id: string;
@@ -34,6 +35,20 @@ function fmtDateTimeLisbon(iso: string | null) {
   }).format(d);
 }
 
+function monthKeyLisbon(iso: string | null) {
+  if (!iso) return "Sem data";
+  const d = new Date(iso);
+  const parts = new Intl.DateTimeFormat("pt-PT", {
+    timeZone: "Europe/Lisbon",
+    month: "long",
+    year: "numeric"
+  }).formatToParts(d);
+
+  const month = parts.find((p) => p.type === "month")?.value ?? "";
+  const year = parts.find((p) => p.type === "year")?.value ?? "";
+  return `${month} ${year}`.replace(/^./, (c) => c.toUpperCase());
+}
+
 function toIsoFromLocal(dtLocal: string) {
   const d = new Date(dtLocal);
   return d.toISOString();
@@ -52,6 +67,7 @@ export default function AgendaEventosPage() {
   const [congregacoes, setCongregacoes] = useState<CongregacaoRow[]>([]);
   const [items, setItems] = useState<EventoRow[]>([]);
 
+  // create avulso
   const [atividadeId, setAtividadeId] = useState("");
   const [congregacaoId, setCongregacaoId] = useState("");
   const [startsLocal, setStartsLocal] = useState("");
@@ -60,6 +76,9 @@ export default function AgendaEventosPage() {
   const [tema, setTema] = useState("");
   const [descricao, setDescricao] = useState("");
   const [publico, setPublico] = useState(true);
+
+  // UI: month expand/collapse
+  const [openMonths, setOpenMonths] = useState<Record<string, boolean>>({});
 
   async function requireSessionOrRedirect() {
     const { data } = await supabase.auth.getSession();
@@ -78,22 +97,14 @@ export default function AgendaEventosPage() {
     const okSession = await requireSessionOrRedirect();
     if (!okSession) return;
 
-    const atvRes = await supabase
-      .from("atividades")
-      .select("id, nome, ativo")
-      .order("nome", { ascending: true });
-
+    const atvRes = await supabase.from("atividades").select("id, nome, ativo").order("nome", { ascending: true });
     if (atvRes.error) {
       setErr(atvRes.error.message);
       setBusy(false);
       return;
     }
 
-    const conRes = await supabase
-      .from("congregacoes")
-      .select("id, nome, ativa")
-      .order("nome", { ascending: true });
-
+    const conRes = await supabase.from("congregacoes").select("id, nome, ativa").order("nome", { ascending: true });
     if (conRes.error) {
       setErr(conRes.error.message);
       setBusy(false);
@@ -104,7 +115,7 @@ export default function AgendaEventosPage() {
       .from("agenda_eventos")
       .select("id, starts_at, ends_at, titulo, tema, status, publico, serie_id, atividade_id, congregacao_id")
       .order("starts_at", { ascending: true })
-      .limit(200);
+      .limit(400);
 
     if (evRes.error) {
       setErr(evRes.error.message);
@@ -112,9 +123,19 @@ export default function AgendaEventosPage() {
       return;
     }
 
-    setAtividades((atvRes.data as AtividadeRow[]) ?? []);
-    setCongregacoes((conRes.data as CongregacaoRow[]) ?? []);
-    setItems((evRes.data as EventoRow[]) ?? []);
+    const loaded = (evRes.data as EventoRow[]) ?? [];
+    setItems(loaded);
+
+    // abrir automaticamente o mês actual (Lisboa) e os meses que tenham eventos (default aberto)
+    const months = new Set(loaded.map((x) => monthKeyLisbon(x.starts_at)));
+    setOpenMonths((prev) => {
+      const next: Record<string, boolean> = { ...prev };
+      for (const m of months) if (next[m] === undefined) next[m] = true;
+      return next;
+    });
+
+    setAtividades(((atvRes.data as AtividadeRow[]) ?? []).map((a) => ({ ...a })));
+    setCongregacoes(((conRes.data as CongregacaoRow[]) ?? []).map((c) => ({ ...c })));
     setBusy(false);
   }
 
@@ -137,7 +158,7 @@ export default function AgendaEventosPage() {
 
     if (!atividadeId) {
       setSaving(false);
-      setErr("Seleciona a atividade (tipo).");
+      setErr("Seleciona o tipo (atividade).");
       return;
     }
     if (!startsLocal) {
@@ -186,7 +207,6 @@ export default function AgendaEventosPage() {
     setOk(null);
 
     const next = ev.status === "agendado" ? "cancelado" : "agendado";
-
     const { error } = await supabase.from("agenda_eventos").update({ status: next }).eq("id", ev.id);
 
     if (error) {
@@ -203,8 +223,6 @@ export default function AgendaEventosPage() {
     router.replace("/login");
   }
 
-  const atividadesAtivas = atividades.filter((a) => a.ativo);
-
   const atividadeName = useMemo(() => {
     const m = new Map<string, string>();
     for (const a of atividades) m.set(a.id, a.nome);
@@ -217,13 +235,45 @@ export default function AgendaEventosPage() {
     return m;
   }, [congregacoes]);
 
+  const atividadesAtivas = useMemo(() => {
+    // não assumir coluna "ativo" (mas se existir, respeitamos)
+    const hasAtivo = atividades.some((a) => typeof a.ativo === "boolean");
+    return hasAtivo ? atividades.filter((a) => a.ativo !== false) : atividades;
+  }, [atividades]);
+
+  const congregacoesAtivas = useMemo(() => {
+    const hasAtiva = congregacoes.some((c) => typeof c.ativa === "boolean");
+    return hasAtiva ? congregacoes.filter((c) => c.ativa !== false) : congregacoes;
+  }, [congregacoes]);
+
+  const grouped = useMemo(() => {
+    const map = new Map<string, EventoRow[]>();
+    for (const ev of items) {
+      const k = monthKeyLisbon(ev.starts_at);
+      if (!map.has(k)) map.set(k, []);
+      map.get(k)!.push(ev);
+    }
+    return Array.from(map.entries()); // já vem ordenado por starts_at no load
+  }, [items]);
+
+  function toggleMonth(m: string) {
+    setOpenMonths((prev) => ({ ...prev, [m]: !prev[m] }));
+  }
+
   return (
     <main style={{ padding: 24, maxWidth: 1000, color: "#fff" }}>
       <h1 style={{ marginTop: 0 }}>Agenda — Eventos</h1>
+      <p style={{ opacity: 0.85, marginTop: 6 }}>
+        <b>Atividade</b> = tipo (Culto/Reunião/etc.). <b>Série</b> = recorrência. <b>Evento</b> = instância.
+      </p>
 
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginTop: 12 }}>
         <a href="/agenda/series" style={{ color: "#fff", opacity: 0.9, textDecoration: "underline" }}>
-          Gerir séries
+          Recorrências (Séries)
+        </a>
+
+        <a href="/escalas" style={{ color: "#fff", opacity: 0.9, textDecoration: "underline" }}>
+          Escalas
         </a>
 
         <button
@@ -246,20 +296,12 @@ export default function AgendaEventosPage() {
       {busy ? <p style={{ marginTop: 14 }}>A carregar…</p> : null}
       {err ? <p style={{ marginTop: 14, color: "#ff6b6b", whiteSpace: "pre-wrap" }}>{err}</p> : null}
 
-      <div
-        style={{
-          marginTop: 16,
-          padding: 16,
-          borderRadius: 16,
-          border: "1px solid #333",
-          background: "#0b0b0b",
-          color: "#fff"
-        }}
-      >
-        <h2 style={{ marginTop: 0, fontSize: 18, color: "#fff" }}>Criar evento avulso</h2>
+      {/* Create avulso */}
+      <div style={{ marginTop: 16, padding: 16, borderRadius: 16, border: "1px solid #333", background: "#0b0b0b" }}>
+        <h2 style={{ marginTop: 0, fontSize: 18 }}>Criar evento avulso</h2>
 
-        <div style={{ display: "grid", gap: 12, maxWidth: 720, color: "#fff" }}>
-          <label style={{ display: "grid", gap: 6, color: "#fff" }}>
+        <div style={{ display: "grid", gap: 12, maxWidth: 720 }}>
+          <label style={{ display: "grid", gap: 6 }}>
             <span>Atividade (tipo)</span>
             <select
               value={atividadeId}
@@ -275,7 +317,7 @@ export default function AgendaEventosPage() {
             </select>
           </label>
 
-          <label style={{ display: "grid", gap: 6, color: "#fff" }}>
+          <label style={{ display: "grid", gap: 6 }}>
             <span>Congregação (opcional)</span>
             <select
               value={congregacaoId}
@@ -283,7 +325,7 @@ export default function AgendaEventosPage() {
               style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
             >
               <option value="">—</option>
-              {congregacoes.filter((c) => c.ativa).map((c) => (
+              {congregacoesAtivas.map((c) => (
                 <option key={c.id} value={c.id}>
                   {c.nome}
                 </option>
@@ -292,7 +334,7 @@ export default function AgendaEventosPage() {
           </label>
 
           <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr" }}>
-            <label style={{ display: "grid", gap: 6, color: "#fff" }}>
+            <label style={{ display: "grid", gap: 6 }}>
               <span>Início (Lisboa)</span>
               <input
                 type="datetime-local"
@@ -302,7 +344,7 @@ export default function AgendaEventosPage() {
               />
             </label>
 
-            <label style={{ display: "grid", gap: 6, color: "#fff" }}>
+            <label style={{ display: "grid", gap: 6 }}>
               <span>Fim (opcional)</span>
               <input
                 type="datetime-local"
@@ -313,7 +355,7 @@ export default function AgendaEventosPage() {
             </label>
           </div>
 
-          <label style={{ display: "grid", gap: 6, color: "#fff" }}>
+          <label style={{ display: "grid", gap: 6 }}>
             <span>Título (opcional)</span>
             <input
               value={titulo}
@@ -322,7 +364,7 @@ export default function AgendaEventosPage() {
             />
           </label>
 
-          <label style={{ display: "grid", gap: 6, color: "#fff" }}>
+          <label style={{ display: "grid", gap: 6 }}>
             <span>Tema (opcional)</span>
             <input
               value={tema}
@@ -331,7 +373,7 @@ export default function AgendaEventosPage() {
             />
           </label>
 
-          <label style={{ display: "grid", gap: 6, color: "#fff" }}>
+          <label style={{ display: "grid", gap: 6 }}>
             <span>Descrição (opcional)</span>
             <input
               value={descricao}
@@ -340,7 +382,7 @@ export default function AgendaEventosPage() {
             />
           </label>
 
-          <label style={{ display: "flex", gap: 8, alignItems: "center", color: "#fff" }}>
+          <label style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input type="checkbox" checked={publico} onChange={(e) => setPublico(e.target.checked)} />
             <span>Evento público</span>
           </label>
@@ -355,7 +397,7 @@ export default function AgendaEventosPage() {
               background: saving ? "#222" : "#111",
               color: "#fff",
               cursor: saving ? "not-allowed" : "pointer",
-              width: 200
+              width: 220
             }}
           >
             {saving ? "A criar…" : "Criar evento"}
@@ -363,62 +405,114 @@ export default function AgendaEventosPage() {
         </div>
       </div>
 
-      <div style={{ marginTop: 16, color: "#fff" }}>
-        <h2 style={{ fontSize: 18, color: "#fff" }}>Próximos eventos</h2>
+      {/* Grouped list */}
+      <div style={{ marginTop: 18 }}>
+        <h2 style={{ fontSize: 18 }}>Eventos gravados</h2>
 
         {!busy && items.length === 0 ? <p>Sem eventos.</p> : null}
 
         {!busy && items.length > 0 ? (
-          <div style={{ display: "grid", gap: 10 }}>
-            {items.map((ev) => {
-              const aName = ev.atividade_id ? atividadeName.get(ev.atividade_id) : "—";
-              const cName = ev.congregacao_id ? congregacaoName.get(ev.congregacao_id) : "—";
-              const label = ev.titulo?.trim()
-                ? ev.titulo
-                : aName
-                ? `${aName}${ev.serie_id ? " (série)" : " (avulso)"}`
-                : "Evento";
-
+          <div style={{ display: "grid", gap: 12 }}>
+            {grouped.map(([month, evs]) => {
+              const open = openMonths[month] ?? true;
               return (
-                <div
-                  key={ev.id}
-                  style={{
-                    padding: 14,
-                    borderRadius: 14,
-                    border: "1px solid #333",
-                    background: "#0b0b0b",
-                    color: "#fff",
-                    opacity: ev.status === "cancelado" ? 0.7 : 1
-                  }}
+                <section
+                  key={month}
+                  style={{ border: "1px solid #333", borderRadius: 16, background: "#0b0b0b", overflow: "hidden" }}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-                    <div>
-                      <div style={{ fontWeight: 900, color: "#fff" }}>
-                        {label} {ev.status === "cancelado" ? <span style={{ opacity: 0.8 }}>(cancelado)</span> : null}
-                      </div>
-                      <div style={{ opacity: 0.85, marginTop: 4, color: "#fff" }}>
-                        {fmtDateTimeLisbon(ev.starts_at)}
-                        {ev.ends_at ? ` → ${fmtDateTimeLisbon(ev.ends_at)}` : ""} · Congregação: {cName}
-                      </div>
-                      {ev.tema ? <div style={{ opacity: 0.85, marginTop: 4, color: "#fff" }}>Tema: {ev.tema}</div> : null}
-                    </div>
+                  <button
+                    onClick={() => toggleMonth(month)}
+                    style={{
+                      width: "100%",
+                      textAlign: "left",
+                      padding: "12px 14px",
+                      border: "none",
+                      background: "#0f0f0f",
+                      color: "#fff",
+                      cursor: "pointer",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center"
+                    }}
+                  >
+                    <span style={{ fontWeight: 900 }}>{month}</span>
+                    <span style={{ opacity: 0.85 }}>{open ? "▾" : "▸"} {evs.length}</span>
+                  </button>
 
-                    <button
-                      onClick={() => cancelOrRestore(ev)}
-                      style={{
-                        padding: "10px 14px",
-                        borderRadius: 12,
-                        border: "1px solid #444",
-                        background: ev.status === "agendado" ? "#2a0f0f" : "#0f2a12",
-                        color: "#fff",
-                        cursor: "pointer",
-                        minWidth: 160
-                      }}
-                    >
-                      {ev.status === "agendado" ? "Cancelar" : "Reativar"}
-                    </button>
-                  </div>
-                </div>
+                  {open ? (
+                    <div style={{ padding: 12, display: "grid", gap: 10 }}>
+                      {evs.map((ev) => {
+                        const aName = ev.atividade_id ? atividadeName.get(ev.atividade_id) : null;
+                        const cName = ev.congregacao_id ? congregacaoName.get(ev.congregacao_id) : "—";
+                        const label = ev.titulo?.trim()
+                          ? ev.titulo
+                          : aName
+                          ? `${aName}${ev.serie_id ? " (gerado)" : " (avulso)"}`
+                          : "Evento";
+
+                        return (
+                          <div
+                            key={ev.id}
+                            style={{
+                              padding: 14,
+                              borderRadius: 14,
+                              border: "1px solid #333",
+                              background: "#0b0b0b",
+                              opacity: ev.status === "cancelado" ? 0.7 : 1
+                            }}
+                          >
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                              <div>
+                                <div style={{ fontWeight: 900 }}>
+                                  {label}{" "}
+                                  {ev.status === "cancelado" ? <span style={{ opacity: 0.8 }}>(cancelado)</span> : null}
+                                </div>
+                                <div style={{ opacity: 0.85, marginTop: 4 }}>
+                                  {fmtDateTimeLisbon(ev.starts_at)}
+                                  {ev.ends_at ? ` → ${fmtDateTimeLisbon(ev.ends_at)}` : ""} · Congregação: {cName}
+                                </div>
+                                {ev.tema ? <div style={{ opacity: 0.85, marginTop: 4 }}>Tema: {ev.tema}</div> : null}
+                              </div>
+
+                              <div style={{ display: "flex", gap: 10 }}>
+                                <a
+                                  href={`/escalas`}
+                                  style={{
+                                    padding: "10px 14px",
+                                    borderRadius: 12,
+                                    border: "1px solid #444",
+                                    background: "#111",
+                                    color: "#fff",
+                                    textDecoration: "none",
+                                    whiteSpace: "nowrap"
+                                  }}
+                                  title="Abrir/criar escala a partir do menu Escalas"
+                                >
+                                  Escala
+                                </a>
+
+                                <button
+                                  onClick={() => cancelOrRestore(ev)}
+                                  style={{
+                                    padding: "10px 14px",
+                                    borderRadius: 12,
+                                    border: "1px solid #444",
+                                    background: ev.status === "agendado" ? "#2a0f0f" : "#0f2a12",
+                                    color: "#fff",
+                                    cursor: "pointer",
+                                    minWidth: 130
+                                  }}
+                                >
+                                  {ev.status === "agendado" ? "Cancelar" : "Reativar"}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                </section>
               );
             })}
           </div>
