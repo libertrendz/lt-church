@@ -1,3 +1,4 @@
+/* PATH: app/escalas/page.tsx */
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -9,11 +10,6 @@ type EventoRow = {
   starts_at: string | null;
   titulo: string | null;
   status: "agendado" | "cancelado";
-};
-
-type EscalaRow = {
-  id: string;
-  evento_id: string;
 };
 
 function fmtLisbon(iso: string | null) {
@@ -59,7 +55,6 @@ export default function EscalasHomePage() {
     const okSession = await requireSessionOrRedirect();
     if (!okSession) return;
 
-    // próximos eventos (agendados primeiro)
     const { data, error } = await supabase
       .from("agenda_eventos")
       .select("id, starts_at, titulo, status")
@@ -99,7 +94,6 @@ export default function EscalasHomePage() {
       return;
     }
 
-    // 1) tentar encontrar escala existente para este evento
     const existing = await supabase
       .from("escalas")
       .select("id, evento_id")
@@ -118,10 +112,13 @@ export default function EscalasHomePage() {
       return;
     }
 
-    // 2) criar escala (unique evento_id evita duplicados)
+    // titulo útil: copia do evento (não é obrigatório)
+    const ev = eventos.find((e) => e.id === selectedEventoId);
+    const tituloSug = ev?.titulo?.trim() ? `Escala — ${ev.titulo}` : "Escala";
+
     const ins = await supabase
       .from("escalas")
-      .insert({ evento_id: selectedEventoId })
+      .insert({ evento_id: selectedEventoId, titulo: tituloSug })
       .select("id, evento_id")
       .single();
 
@@ -226,11 +223,6 @@ export default function EscalasHomePage() {
           >
             {working ? "A abrir…" : "Abrir / criar escala"}
           </button>
-
-          <p style={{ marginTop: 12, opacity: 0.75 }}>
-            Nota: Eventos cancelados ainda podem ter escala (útil para histórico), mas podemos bloquear isso depois se
-            quiseres.
-          </p>
         </div>
       ) : null}
     </main>
