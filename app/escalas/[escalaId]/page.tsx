@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../../lib/supabase/client";
 
 type FuncaoRow = { id: string; nome: string };
-type MembroRow = { id: string; nome: string; ativo: boolean };
+type MembroRow = { id: string; nome: string };
 
 type EscalaRow = {
   id: string;
@@ -118,7 +118,7 @@ export default function EscalaDetailPage() {
       setEvento(null);
     }
 
-    // Funções: não assumir coluna ativa/ativo — só id/nome
+    // Funções: só id/nome
     const fRes = await supabase.from("funcoes").select("id, nome").order("nome", { ascending: true });
     if (fRes.error) {
       setErr(fRes.error.message);
@@ -127,8 +127,8 @@ export default function EscalaDetailPage() {
     }
     setFuncoes((fRes.data as FuncaoRow[]) ?? []);
 
-    // Membros: aqui já sabemos que existe "ativo"
-    const mRes = await supabase.from("membros").select("id, nome, ativo").order("nome", { ascending: true });
+    // Membros: só id/nome (não assumir coluna "ativo")
+    const mRes = await supabase.from("membros").select("id, nome").order("nome", { ascending: true });
     if (mRes.error) {
       setErr(mRes.error.message);
       setBusy(false);
@@ -234,8 +234,6 @@ export default function EscalaDetailPage() {
     router.replace("/login");
   }
 
-  const membrosAtivos = membros.filter((m) => m.ativo);
-
   return (
     <main style={{ padding: 24, maxWidth: 1100, color: "#fff" }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
@@ -305,7 +303,7 @@ export default function EscalaDetailPage() {
                   style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
                 >
                   <option value="">—</option>
-                  {membrosAtivos.map((m) => (
+                  {membros.map((m) => (
                     <option key={m.id} value={m.id}>
                       {m.nome}
                     </option>
