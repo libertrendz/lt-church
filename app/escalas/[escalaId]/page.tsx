@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../../lib/supabase/client";
 
-type EscalaRow = { id: string; evento_id: string | null };
+type EscalaRow = { id: string; evento_id: string | null; atividade_id: string | null };
 type EventoRow = { id: string; starts_at: string | null; titulo: string | null };
 type FuncaoRow = { id: string; nome: string };
 
@@ -17,18 +17,14 @@ type SlotRow = {
   status: string;
 };
 
-type MembroRow = {
-  id: string;
-  nome: string | null;
-  // não assumimos email aqui; pode não existir em membros
-};
+type MembroRow = { id: string; nome: string | null };
 
 type ItemRow = {
   id: string;
   escala_slot_id: string | null;
   membro_id: string;
-  funcao_id: string;
-  estado: string | null;
+  funcao_id: string | null;
+  status: string | null; // <- schema real
   notas: string | null;
   membros?: { id: string; nome: string | null }[] | null;
 };
@@ -68,11 +64,10 @@ export default function EscalaDetalhePage() {
   const [funcoes, setFuncoes] = useState<Map<string, FuncaoRow>>(new Map());
   const [slots, setSlots] = useState<SlotRow[]>([]);
   const [itemsBySlot, setItemsBySlot] = useState<Map<string, ItemRow>>(new Map());
-
   const [membros, setMembros] = useState<MembroRow[]>([]);
 
   const [selectedMembro, setSelectedMembro] = useState<Record<string, string>>({});
-  const [selectedEstado, setSelectedEstado] = useState<Record<string, string>>({});
+  const [selectedStatus, setSelectedStatus] = useState<Record<string, string>>({});
   const [notas, setNotas] = useState<Record<string, string>>({});
   const [savingSlot, setSavingSlot] = useState<Record<string, boolean>>({});
 
@@ -93,7 +88,7 @@ export default function EscalaDetalhePage() {
     const okSession = await requireSessionOrRedirect();
     if (!okSession) return;
 
-    const esRes = await supabase.from("escalas").select("id, evento_id").eq("id", escalaId).single();
+    const esRes = await supabase.from("escalas").select("id, evento_id, atividade_id").eq("id", escalaId).single();
     if (esRes.error) {
       setErr(esRes.error.message);
       setBusy(false);
@@ -148,10 +143,9 @@ export default function EscalaDetalhePage() {
       setFuncoes(new Map());
     }
 
-    // ✅ aqui: sem email
     const itRes = await supabase
       .from("escala_itens")
-      .select("id, escala_slot_id, membro_id, funcao_id, estado, notas, membros:membro_id(id, nome)")
+      .select("id, escala_slot_id, membro_id, funcao_id, status, notas, membros:membro_id(id, nome)")
       .eq("escala_id", escalaId);
 
     if (itRes.error) {
@@ -162,12 +156,9 @@ export default function EscalaDetalhePage() {
 
     const items = ((itRes.data as unknown) as ItemRow[]) ?? [];
     const mapItems = new Map<string, ItemRow>();
-    for (const it of items) {
-      if (it.escala_slot_id) mapItems.set(it.escala_slot_id, it);
-    }
+    for (const it of items) if (it.escala_slot_id) mapItems.set(it.escala_slot_id, it);
     setItemsBySlot(mapItems);
 
-    // ✅ membros dropdown: id,nome
     const memRes = await supabase.from("membros").select("id, nome").order("nome", { ascending: true }).limit(500);
     if (memRes.error) {
       setErr(memRes.error.message);
@@ -209,8 +200,8 @@ export default function EscalaDetalhePage() {
     }));
   }, [slots, funcoes]);
 
-  function getDefaultEstado(slotId: string) {
-    return selectedEstado[slotId] ?? "confirmado";
+  function getDefaultStatus(slotId: string) {
+    return selectedStatus[slotId] ?? "confirmado";
   }
 
   async function assign(slot: SlotRow) {
@@ -224,13 +215,13 @@ export default function EscalaDetalhePage() {
     setErr(null);
     setOk(null);
 
-    const estado = getDefaultEstado(slot.id);
+    const status = getDefaultStatus(slot.id);
     const nota = notas[slot.id]?.trim() ? notas[slot.id].trim() : null;
 
     const res = await supabase.rpc("assign_member_to_slot", {
       p_slot_id: slot.id,
       p_membro_id: membroId,
-      p_estado: estado,
+      p_status: status,
       p_notas: nota
     });
 
@@ -274,23 +265,14 @@ export default function EscalaDetalhePage() {
         </a>
         <button
           onClick={logout}
-          style={{
-            padding: "10px 14px",
-            borderRadius: 12,
-            border: "1px solid #444",
-            background: "#111",
-            color: "#fff",
-            cursor: "pointer"
-          }}
+          style={{ padding: "10px 14px", borderRadius: 12, border: "1px solid #444", background: "#111", color: "#fff" }}
         >
           Sair
         </button>
-
         {ok ? <span style={{ color: "#7CFF7C" }}>{ok}</span> : null}
       </div>
 
       <h1 style={{ marginTop: 14 }}>Escala</h1>
-
       {busy ? <p>A carregar…</p> : null}
       {err ? <p style={{ color: "#ff6b6b", whiteSpace: "pre-wrap" }}>{err}</p> : null}
 
@@ -328,17 +310,7 @@ export default function EscalaDetalhePage() {
                     const label = joined ? safeMemberLabel({ id: joined.id, nome: joined.nome }) : null;
 
                     return (
-                      <div
-                        key={s.id}
-                        style={{
-                          border: "1px solid #333",
-                          borderRadius: 14,
-                          padding: 12,
-                          display: "grid",
-                          gap: 10,
-                          background: "#0b0b0b"
-                        }}
-                      >
+                      <div key={s.id} style={{ border: "1px solid #333", borderRadius: 14, padding: 12, display: "grid", gap: 10 }}>
                         <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
                           <div style={{ fontWeight: 800 }}>
                             Slot {s.slot_index} <span style={{ opacity: 0.8, fontWeight: 600 }}>· {isFilled ? "preenchido" : "vazio"}</span>
@@ -348,15 +320,7 @@ export default function EscalaDetalhePage() {
                             <button
                               onClick={() => unassign(s)}
                               disabled={disabled}
-                              style={{
-                                padding: "10px 14px",
-                                borderRadius: 12,
-                                border: "1px solid #444",
-                                background: disabled ? "#222" : "#2a0f0f",
-                                color: "#fff",
-                                cursor: disabled ? "not-allowed" : "pointer",
-                                minWidth: 120
-                              }}
+                              style={{ padding: "10px 14px", borderRadius: 12, border: "1px solid #444", background: disabled ? "#222" : "#2a0f0f", color: "#fff" }}
                             >
                               Remover
                             </button>
@@ -364,15 +328,7 @@ export default function EscalaDetalhePage() {
                             <button
                               onClick={() => assign(s)}
                               disabled={disabled}
-                              style={{
-                                padding: "10px 14px",
-                                borderRadius: 12,
-                                border: "1px solid #444",
-                                background: disabled ? "#222" : "#0f2a12",
-                                color: "#fff",
-                                cursor: disabled ? "not-allowed" : "pointer",
-                                minWidth: 120
-                              }}
+                              style={{ padding: "10px 14px", borderRadius: 12, border: "1px solid #444", background: disabled ? "#222" : "#0f2a12", color: "#fff" }}
                             >
                               Atribuir
                             </button>
@@ -382,7 +338,7 @@ export default function EscalaDetalhePage() {
                         {isFilled ? (
                           <div style={{ opacity: 0.9 }}>
                             <b>{label ?? "—"}</b>
-                            {item?.estado ? <span style={{ opacity: 0.85 }}> · {item.estado}</span> : null}
+                            {item?.status ? <span style={{ opacity: 0.85 }}> · {item.status}</span> : null}
                             {item?.notas ? <div style={{ opacity: 0.85, marginTop: 6 }}>Notas: {item.notas}</div> : null}
                           </div>
                         ) : (
@@ -404,10 +360,10 @@ export default function EscalaDetalhePage() {
                             </label>
 
                             <label style={{ display: "grid", gap: 6 }}>
-                              <span>Estado</span>
+                              <span>Status</span>
                               <select
-                                value={getDefaultEstado(s.id)}
-                                onChange={(e) => setSelectedEstado((p) => ({ ...p, [s.id]: e.target.value }))}
+                                value={getDefaultStatus(s.id)}
+                                onChange={(e) => setSelectedStatus((p) => ({ ...p, [s.id]: e.target.value }))}
                                 style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
                               >
                                 <option value="confirmado">confirmado</option>
