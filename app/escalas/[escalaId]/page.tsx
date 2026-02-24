@@ -5,30 +5,44 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../../lib/supabase/client";
 
-type FuncaoRow = { id: string; nome: string };
-type MembroRow = { id: string; nome: string };
-
 type EscalaRow = {
   id: string;
   evento_id: string | null;
-  titulo: string | null;
-  notas: string | null;
-  ativo: boolean;
 };
 
 type EventoRow = {
   id: string;
   starts_at: string | null;
   titulo: string | null;
-  status: "agendado" | "cancelado";
+};
+
+type FuncaoRow = {
+  id: string;
+  nome: string;
+};
+
+type SlotRow = {
+  id: string;
+  escala_id: string;
+  funcao_id: string;
+  slot_index: number;
+  status: string;
+};
+
+type MembroRow = {
+  id: string;
+  nome: string | null;
+  email: string | null;
 };
 
 type ItemRow = {
   id: string;
-  funcao_id: string;
+  escala_slot_id: string | null;
   membro_id: string;
-  status: "confirmado" | "pendente" | "cancelado";
+  funcao_id: string;
+  estado: string | null;
   notas: string | null;
+  membros?: { id: string; nome: string | null; email: string | null } | null;
 };
 
 function fmtLisbon(iso: string | null) {
@@ -36,7 +50,7 @@ function fmtLisbon(iso: string | null) {
   const d = new Date(iso);
   return new Intl.DateTimeFormat("pt-PT", {
     timeZone: "Europe/Lisbon",
-    weekday: "short",
+    weekday: "long",
     day: "2-digit",
     month: "2-digit",
     year: "numeric",
@@ -45,7 +59,11 @@ function fmtLisbon(iso: string | null) {
   }).format(d);
 }
 
-export default function EscalaDetailPage() {
+function safeMemberLabel(m: MembroRow) {
+  return (m.nome && m.nome.trim()) || (m.email && m.email.trim()) || m.id;
+}
+
+export default function EscalaDetalhePage() {
   const router = useRouter();
   const params = useParams<{ escalaId: string }>();
   const escalaId = params.escalaId;
@@ -53,21 +71,23 @@ export default function EscalaDetailPage() {
   const supabase = useMemo(() => supabaseBrowser(), []);
 
   const [busy, setBusy] = useState(true);
-  const [saving, setSaving] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
 
   const [escala, setEscala] = useState<EscalaRow | null>(null);
   const [evento, setEvento] = useState<EventoRow | null>(null);
 
-  const [funcoes, setFuncoes] = useState<FuncaoRow[]>([]);
-  const [membros, setMembros] = useState<MembroRow[]>([]);
-  const [items, setItems] = useState<ItemRow[]>([]);
+  const [funcoes, setFuncoes] = useState<Map<string, FuncaoRow>>(new Map());
+  const [slots, setSlots] = useState<SlotRow[]>([]);
+  const [itemsBySlot, setItemsBySlot] = useState<Map<string, ItemRow>>(new Map());
 
-  const [funcaoId, setFuncaoId] = useState("");
-  const [membroId, setMembroId] = useState("");
-  const [status, setStatus] = useState<ItemRow["status"]>("confirmado");
-  const [notas, setNotas] = useState("");
+  const [membros, setMembros] = useState<MembroRow[]>([]);
+
+  // UI state per slot
+  const [selectedMembro, setSelectedMembro] = useState<Record<string, string>>({});
+  const [selectedEstado, setSelectedEstado] = useState<Record<string, string>>({});
+  const [notas, setNotas] = useState<Record<string, string>>({});
+  const [savingSlot, setSavingSlot] = useState<Record<string, boolean>>({});
 
   async function requireSessionOrRedirect() {
     const { data } = await supabase.auth.getSession();
@@ -86,26 +106,21 @@ export default function EscalaDetailPage() {
     const okSession = await requireSessionOrRedirect();
     if (!okSession) return;
 
-    const escalaRes = await supabase
-      .from("escalas")
-      .select("id, evento_id, titulo, notas, ativo")
-      .eq("id", escalaId)
-      .single();
-
-    if (escalaRes.error) {
-      setErr(escalaRes.error.message);
+    // Escala
+    const esRes = await supabase.from("escalas").select("id, evento_id").eq("id", escalaId).single();
+    if (esRes.error) {
+      setErr(esRes.error.message);
       setBusy(false);
       return;
     }
+    setEscala(esRes.data as EscalaRow);
 
-    const s = escalaRes.data as EscalaRow;
-    setEscala(s);
-
-    if (s.evento_id) {
+    // Evento (header)
+    if (esRes.data?.evento_id) {
       const evRes = await supabase
         .from("agenda_eventos")
-        .select("id, starts_at, titulo, status")
-        .eq("id", s.evento_id)
+        .select("id, starts_at, titulo")
+        .eq("id", esRes.data.evento_id)
         .single();
 
       if (evRes.error) {
@@ -118,37 +133,66 @@ export default function EscalaDetailPage() {
       setEvento(null);
     }
 
-    // Funções: só id/nome
-    const fRes = await supabase.from("funcoes").select("id, nome").order("nome", { ascending: true });
-    if (fRes.error) {
-      setErr(fRes.error.message);
-      setBusy(false);
-      return;
-    }
-    setFuncoes((fRes.data as FuncaoRow[]) ?? []);
-
-    // Membros: só id/nome (não assumir coluna "ativo")
-    const mRes = await supabase.from("membros").select("id, nome").order("nome", { ascending: true });
-    if (mRes.error) {
-      setErr(mRes.error.message);
-      setBusy(false);
-      return;
-    }
-    setMembros((mRes.data as MembroRow[]) ?? []);
-
-    const iRes = await supabase
-      .from("escala_itens")
-      .select("id, funcao_id, membro_id, status, notas")
+    // Slots
+    const slRes = await supabase
+      .from("escala_slots")
+      .select("id, escala_id, funcao_id, slot_index, status")
       .eq("escala_id", escalaId)
-      .order("created_at", { ascending: true });
+      .order("funcao_id", { ascending: true })
+      .order("slot_index", { ascending: true });
 
-    if (iRes.error) {
-      setErr(iRes.error.message);
+    if (slRes.error) {
+      setErr(slRes.error.message);
+      setBusy(false);
+      return;
+    }
+    const slotsData = (slRes.data as SlotRow[]) ?? [];
+    setSlots(slotsData);
+
+    // Funções (map)
+    const funcaoIds = Array.from(new Set(slotsData.map((s) => s.funcao_id)));
+    if (funcaoIds.length > 0) {
+      const fRes = await supabase.from("funcoes").select("id, nome").in("id", funcaoIds);
+      if (fRes.error) {
+        setErr(fRes.error.message);
+        setBusy(false);
+        return;
+      }
+      const map = new Map<string, FuncaoRow>();
+      (fRes.data as FuncaoRow[]).forEach((f) => map.set(f.id, f));
+      setFuncoes(map);
+    } else {
+      setFuncoes(new Map());
+    }
+
+    // Itens (por slot) — usamos escala_slot_id
+    const itRes = await supabase
+      .from("escala_itens")
+      .select("id, escala_slot_id, membro_id, funcao_id, estado, notas, membros:membro_id(id, nome, email)")
+      .eq("escala_id", escalaId);
+
+    if (itRes.error) {
+      setErr(itRes.error.message);
       setBusy(false);
       return;
     }
 
-    setItems((iRes.data as ItemRow[]) ?? []);
+    const items = (itRes.data as ItemRow[]) ?? [];
+    const mapItems = new Map<string, ItemRow>();
+    for (const it of items) {
+      if (it.escala_slot_id) mapItems.set(it.escala_slot_id, it);
+    }
+    setItemsBySlot(mapItems);
+
+    // Membros (para dropdown)
+    const memRes = await supabase.from("membros").select("id, nome, email").order("nome", { ascending: true }).limit(500);
+    if (memRes.error) {
+      setErr(memRes.error.message);
+      setBusy(false);
+      return;
+    }
+    setMembros((memRes.data as MembroRow[]) ?? []);
+
     setBusy(false);
   }
 
@@ -164,83 +208,89 @@ export default function EscalaDetailPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [escalaId]);
 
-  const funcaoName = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const f of funcoes) m.set(f.id, f.nome);
-    return m;
-  }, [funcoes]);
-
-  const membroName = useMemo(() => {
-    const m = new Map<string, string>();
-    for (const x of membros) m.set(x.id, x.nome);
-    return m;
-  }, [membros]);
-
-  async function addItem() {
-    setSaving(true);
-    setErr(null);
-    setOk(null);
-
-    if (!funcaoId) {
-      setSaving(false);
-      setErr("Seleciona a função.");
-      return;
-    }
-    if (!membroId) {
-      setSaving(false);
-      setErr("Seleciona o membro.");
-      return;
-    }
-
-    const { error } = await supabase.from("escala_itens").insert({
-      escala_id: escalaId,
-      funcao_id: funcaoId,
-      membro_id: membroId,
-      status,
-      notas: notas.trim() ? notas.trim() : null
-    });
-
-    setSaving(false);
-
-    if (error) {
-      setErr(error.message);
-      return;
-    }
-
-    setOk("Item adicionado.");
-    setFuncaoId("");
-    setMembroId("");
-    setStatus("confirmado");
-    setNotas("");
-    await load();
-  }
-
-  async function removeItem(itemId: string) {
-    setErr(null);
-    setOk(null);
-
-    const { error } = await supabase.from("escala_itens").delete().eq("id", itemId);
-    if (error) {
-      setErr(error.message);
-      return;
-    }
-
-    setOk("Item removido.");
-    await load();
-  }
-
   async function logout() {
     await supabase.auth.signOut();
     router.replace("/login");
   }
 
+  const grouped = useMemo(() => {
+    const m = new Map<string, SlotRow[]>();
+    for (const s of slots) {
+      if (!m.has(s.funcao_id)) m.set(s.funcao_id, []);
+      m.get(s.funcao_id)!.push(s);
+    }
+    return Array.from(m.entries()).map(([funcaoId, arr]) => ({
+      funcaoId,
+      funcaoNome: funcoes.get(funcaoId)?.nome ?? funcaoId,
+      slots: arr
+    }));
+  }, [slots, funcoes]);
+
+  function getDefaultEstado(slotId: string) {
+    return selectedEstado[slotId] ?? "confirmado";
+  }
+
+  async function assign(slot: SlotRow) {
+    const membroId = selectedMembro[slot.id];
+    if (!membroId) {
+      setErr("Seleciona um membro.");
+      return;
+    }
+
+    setSavingSlot((p) => ({ ...p, [slot.id]: true }));
+    setErr(null);
+    setOk(null);
+
+    const estado = getDefaultEstado(slot.id);
+    const nota = notas[slot.id]?.trim() ? notas[slot.id].trim() : null;
+
+    const res = await supabase.rpc("assign_member_to_slot", {
+      p_slot_id: slot.id,
+      p_membro_id: membroId,
+      p_estado: estado,
+      p_notas: nota
+    });
+
+    setSavingSlot((p) => ({ ...p, [slot.id]: false }));
+
+    if (res.error) {
+      setErr(res.error.message);
+      return;
+    }
+
+    setOk("Atribuído.");
+    await load();
+  }
+
+  async function unassign(slot: SlotRow) {
+    setSavingSlot((p) => ({ ...p, [slot.id]: true }));
+    setErr(null);
+    setOk(null);
+
+    const res = await supabase.rpc("unassign_member_from_slot", {
+      p_slot_id: slot.id
+    });
+
+    setSavingSlot((p) => ({ ...p, [slot.id]: false }));
+
+    if (res.error) {
+      setErr(res.error.message);
+      return;
+    }
+
+    setOk("Removido.");
+    await load();
+  }
+
   return (
     <main style={{ padding: 24, maxWidth: 1100, color: "#fff" }}>
       <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <a href="/escalas" style={{ color: "#fff", opacity: 0.9, textDecoration: "underline" }}>
-          ← Voltar
+        <a href="/cultos" style={{ color: "#fff", opacity: 0.9, textDecoration: "underline" }}>
+          Cultos & Escalas
         </a>
-
+        <a href="/agenda" style={{ color: "#fff", opacity: 0.9, textDecoration: "underline" }}>
+          Agenda
+        </a>
         <button
           onClick={logout}
           style={{
@@ -258,153 +308,172 @@ export default function EscalaDetailPage() {
         {ok ? <span style={{ color: "#7CFF7C" }}>{ok}</span> : null}
       </div>
 
-      <h1 style={{ marginTop: 16 }}>Escala</h1>
+      <h1 style={{ marginTop: 14 }}>Escala</h1>
 
-      {busy ? <p style={{ marginTop: 10 }}>A carregar…</p> : null}
-      {err ? <p style={{ marginTop: 10, color: "#ff6b6b", whiteSpace: "pre-wrap" }}>{err}</p> : null}
+      {busy ? <p>A carregar…</p> : null}
+      {err ? <p style={{ color: "#ff6b6b", whiteSpace: "pre-wrap" }}>{err}</p> : null}
 
-      {!busy && escala ? (
-        <>
-          <div style={{ marginTop: 12, padding: 16, borderRadius: 16, border: "1px solid #333", background: "#0b0b0b" }}>
-            <div style={{ fontWeight: 900 }}>
-              {evento ? `${fmtLisbon(evento.starts_at)} · ${evento.titulo ?? "Evento"}` : "Evento: —"}
-              {evento?.status === "cancelado" ? <span style={{ opacity: 0.8 }}> (cancelado)</span> : null}
-            </div>
-            <div style={{ marginTop: 6, opacity: 0.85 }}>
-              Escala ID: <span style={{ opacity: 0.95 }}>{escala.id}</span>
-            </div>
+      {!busy ? (
+        <div style={{ marginTop: 12, padding: 14, borderRadius: 16, border: "1px solid #333", background: "#0b0b0b" }}>
+          <div style={{ fontWeight: 900 }}>
+            {evento?.starts_at ? `${fmtLisbon(evento.starts_at)} · ${evento.titulo ?? "Evento"}` : "Evento —"}
           </div>
+          <div style={{ opacity: 0.8, marginTop: 4 }}>Escala ID: {escala?.id}</div>
+        </div>
+      ) : null}
 
-          <div style={{ marginTop: 14, padding: 16, borderRadius: 16, border: "1px solid #333", background: "#0b0b0b" }}>
-            <h2 style={{ marginTop: 0, fontSize: 18 }}>Adicionar item</h2>
+      {!busy ? (
+        <div style={{ marginTop: 16, display: "grid", gap: 14 }}>
+          {grouped.map((g) => {
+            const total = g.slots.length;
+            const filled = g.slots.filter((s) => (s.status ?? "").toLowerCase() === "fechado").length;
 
-            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr", maxWidth: 900 }}>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span>Função</span>
-                <select
-                  value={funcaoId}
-                  onChange={(e) => setFuncaoId(e.target.value)}
-                  style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
-                >
-                  <option value="">—</option>
-                  {funcoes.map((f) => (
-                    <option key={f.id} value={f.id}>
-                      {f.nome}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label style={{ display: "grid", gap: 6 }}>
-                <span>Membro</span>
-                <select
-                  value={membroId}
-                  onChange={(e) => setMembroId(e.target.value)}
-                  style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
-                >
-                  <option value="">—</option>
-                  {membros.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.nome}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-
-            <div style={{ display: "grid", gap: 12, gridTemplateColumns: "1fr 1fr", maxWidth: 900, marginTop: 12 }}>
-              <label style={{ display: "grid", gap: 6 }}>
-                <span>Estado</span>
-                <select
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as ItemRow["status"])}
-                  style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
-                >
-                  <option value="confirmado">confirmado</option>
-                  <option value="pendente">pendente</option>
-                  <option value="cancelado">cancelado</option>
-                </select>
-              </label>
-
-              <label style={{ display: "grid", gap: 6 }}>
-                <span>Notas (opcional)</span>
-                <input
-                  value={notas}
-                  onChange={(e) => setNotas(e.target.value)}
-                  style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
-                />
-              </label>
-            </div>
-
-            <button
-              onClick={addItem}
-              disabled={saving}
-              style={{
-                marginTop: 12,
-                padding: "10px 14px",
-                borderRadius: 12,
-                border: "1px solid #444",
-                background: saving ? "#222" : "#111",
-                color: "#fff",
-                cursor: saving ? "not-allowed" : "pointer",
-                width: 180
-              }}
-            >
-              {saving ? "A gravar…" : "Adicionar"}
-            </button>
-          </div>
-
-          <div style={{ marginTop: 14 }}>
-            <h2 style={{ fontSize: 18 }}>Itens</h2>
-
-            {items.length === 0 ? <p>Sem itens.</p> : null}
-
-            {items.length > 0 ? (
-              <div style={{ display: "grid", gap: 10 }}>
-                {items.map((it) => (
-                  <div
-                    key={it.id}
-                    style={{
-                      padding: 14,
-                      borderRadius: 14,
-                      border: "1px solid #333",
-                      background: "#0b0b0b",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      gap: 12,
-                      alignItems: "center"
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 900 }}>
-                        {funcaoName.get(it.funcao_id) ?? "Função —"} · {membroName.get(it.membro_id) ?? "Membro —"}
-                      </div>
-                      <div style={{ opacity: 0.85, marginTop: 4 }}>
-                        Estado: {it.status}
-                        {it.notas ? ` · Notas: ${it.notas}` : ""}
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => removeItem(it.id)}
-                      style={{
-                        padding: "10px 14px",
-                        borderRadius: 12,
-                        border: "1px solid #444",
-                        background: "#2a0f0f",
-                        color: "#fff",
-                        cursor: "pointer",
-                        minWidth: 120
-                      }}
-                    >
-                      Remover
-                    </button>
+            return (
+              <section key={g.funcaoId} style={{ border: "1px solid #333", borderRadius: 16, background: "#0b0b0b" }}>
+                <div style={{ padding: 12, borderBottom: "1px solid #222", display: "flex", justifyContent: "space-between" }}>
+                  <div style={{ fontWeight: 900, fontSize: 16 }}>{g.funcaoNome}</div>
+                  <div style={{ opacity: 0.85 }}>
+                    {filled}/{total}
                   </div>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        </>
+                </div>
+
+                <div style={{ padding: 12, display: "grid", gap: 10 }}>
+                  {g.slots.map((s) => {
+                    const item = itemsBySlot.get(s.id) ?? null;
+                    const isFilled = (s.status ?? "").toLowerCase() === "fechado";
+                    const disabled = !!savingSlot[s.id];
+
+                    const label = item?.membros
+                      ? safeMemberLabel({ id: item.membros.id, nome: item.membros.nome, email: item.membros.email })
+                      : null;
+
+                    return (
+                      <div
+                        key={s.id}
+                        style={{
+                          border: "1px solid #333",
+                          borderRadius: 14,
+                          padding: 12,
+                          display: "grid",
+                          gap: 10,
+                          background: "#0b0b0b"
+                        }}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                          <div style={{ fontWeight: 800 }}>
+                            Slot {s.slot_index}{" "}
+                            <span style={{ opacity: 0.8, fontWeight: 600 }}>
+                              · {isFilled ? "preenchido" : "vazio"}
+                            </span>
+                          </div>
+
+                          {isFilled ? (
+                            <button
+                              onClick={() => unassign(s)}
+                              disabled={disabled}
+                              style={{
+                                padding: "10px 14px",
+                                borderRadius: 12,
+                                border: "1px solid #444",
+                                background: disabled ? "#222" : "#2a0f0f",
+                                color: "#fff",
+                                cursor: disabled ? "not-allowed" : "pointer",
+                                minWidth: 120
+                              }}
+                            >
+                              Remover
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => assign(s)}
+                              disabled={disabled}
+                              style={{
+                                padding: "10px 14px",
+                                borderRadius: 12,
+                                border: "1px solid #444",
+                                background: disabled ? "#222" : "#0f2a12",
+                                color: "#fff",
+                                cursor: disabled ? "not-allowed" : "pointer",
+                                minWidth: 120
+                              }}
+                            >
+                              Atribuir
+                            </button>
+                          )}
+                        </div>
+
+                        {isFilled ? (
+                          <div style={{ opacity: 0.9 }}>
+                            <b>{label ?? "—"}</b>
+                            {item?.estado ? <span style={{ opacity: 0.85 }}> · {item.estado}</span> : null}
+                            {item?.notas ? <div style={{ opacity: 0.85, marginTop: 6 }}>Notas: {item.notas}</div> : null}
+                          </div>
+                        ) : (
+                          <div style={{ display: "grid", gap: 10, gridTemplateColumns: "1fr 1fr" }}>
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span>Membro</span>
+                              <select
+                                value={selectedMembro[s.id] ?? ""}
+                                onChange={(e) => setSelectedMembro((p) => ({ ...p, [s.id]: e.target.value }))}
+                                style={{
+                                  padding: 10,
+                                  borderRadius: 10,
+                                  border: "1px solid #333",
+                                  background: "#111",
+                                  color: "#fff"
+                                }}
+                              >
+                                <option value="">—</option>
+                                {membros.map((m) => (
+                                  <option key={m.id} value={m.id}>
+                                    {safeMemberLabel(m)}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+
+                            <label style={{ display: "grid", gap: 6 }}>
+                              <span>Estado</span>
+                              <select
+                                value={getDefaultEstado(s.id)}
+                                onChange={(e) => setSelectedEstado((p) => ({ ...p, [s.id]: e.target.value }))}
+                                style={{
+                                  padding: 10,
+                                  borderRadius: 10,
+                                  border: "1px solid #333",
+                                  background: "#111",
+                                  color: "#fff"
+                                }}
+                              >
+                                <option value="confirmado">confirmado</option>
+                                <option value="pendente">pendente</option>
+                              </select>
+                            </label>
+
+                            <label style={{ display: "grid", gap: 6, gridColumn: "1 / -1" }}>
+                              <span>Notas (opcional)</span>
+                              <input
+                                value={notas[s.id] ?? ""}
+                                onChange={(e) => setNotas((p) => ({ ...p, [s.id]: e.target.value }))}
+                                style={{
+                                  padding: 10,
+                                  borderRadius: 10,
+                                  border: "1px solid #333",
+                                  background: "#111",
+                                  color: "#fff"
+                                }}
+                              />
+                            </label>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </section>
+            );
+          })}
+        </div>
       ) : null}
     </main>
   );
