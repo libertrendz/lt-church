@@ -5,7 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../../lib/supabase/client";
 
-type EscalaRow = { id: string; evento_id: string | null; atividade_id: string | null };
+type EscalaRow = { id: string; evento_id: string | null };
 type EventoRow = { id: string; starts_at: string | null; titulo: string | null };
 type FuncaoRow = { id: string; nome: string };
 
@@ -24,7 +24,7 @@ type ItemRow = {
   escala_slot_id: string | null;
   membro_id: string;
   funcao_id: string | null;
-  status: string | null; // <- schema real
+  status: string | null;
   notas: string | null;
   membros?: { id: string; nome: string | null }[] | null;
 };
@@ -88,7 +88,8 @@ export default function EscalaDetalhePage() {
     const okSession = await requireSessionOrRedirect();
     if (!okSession) return;
 
-    const esRes = await supabase.from("escalas").select("id, evento_id, atividade_id").eq("id", escalaId).single();
+    // ✅ escalas NÃO tem atividade_id
+    const esRes = await supabase.from("escalas").select("id, evento_id").eq("id", escalaId).single();
     if (esRes.error) {
       setErr(esRes.error.message);
       setBusy(false);
@@ -263,10 +264,7 @@ export default function EscalaDetalhePage() {
         <a href="/agenda" style={{ color: "#fff", opacity: 0.9, textDecoration: "underline" }}>
           Agenda
         </a>
-        <button
-          onClick={logout}
-          style={{ padding: "10px 14px", borderRadius: 12, border: "1px solid #444", background: "#111", color: "#fff" }}
-        >
+        <button onClick={logout} style={{ padding: "10px 14px", borderRadius: 12, border: "1px solid #444", background: "#111", color: "#fff" }}>
           Sair
         </button>
         {ok ? <span style={{ color: "#7CFF7C" }}>{ok}</span> : null}
