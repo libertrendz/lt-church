@@ -26,7 +26,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           color: "#fff"
         }}
       >
-        {/* aplica accent cedo (localStorage) */}
         <script
           dangerouslySetInnerHTML={{
             __html: `
@@ -43,21 +42,23 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           dangerouslySetInnerHTML={{
             __html: `
 :root{
-  --accent: #D4AF37;         /* default dourado */
+  --accent: #D4AF37;
   --bg: #050505;
   --card: #0b0b0b;
-  --card2: #070707;
-  --border: #2a2a2a;
+  --card2:#070707;
+  --border: rgba(255,255,255,.10);
+  --border2: rgba(255,255,255,.14);
+  --shadow: 0 14px 38px rgba(0,0,0,.45);
+  --shadowHover: 0 18px 50px rgba(0,0,0,.55);
   --textDim: rgba(255,255,255,.82);
-  --shadow: 0 10px 30px rgba(0,0,0,.35);
 }
 
-/* links */
+*{ box-sizing: border-box; }
+
 a{ color: var(--accent); }
 a.navlink{ color:#fff; opacity:.9; }
 a.navlink:hover{ opacity:1; }
 
-/* headings: underline discreto com accent */
 .h-accent{
   display:inline-block;
   position:relative;
@@ -67,18 +68,32 @@ a.navlink:hover{ opacity:1; }
   display:block;
   height:3px;
   width:56px;
-  margin-top:8px;
+  margin-top:10px;
   border-radius:99px;
   background: var(--accent);
   opacity:.9;
 }
 
-/* cards com sombra e borda subtil */
+/* cards: charme global */
 .card{
   border: 1px solid var(--border);
-  background: var(--card);
+  background: radial-gradient(1200px 400px at 20% 0%, rgba(255,255,255,.05), transparent 55%), var(--card);
   border-radius: 18px;
   box-shadow: var(--shadow);
+  transition: transform .15s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.card:hover{
+  transform: translateY(-2px);
+  box-shadow: var(--shadowHover);
+  border-color: var(--border2);
+}
+
+/* card com glow subtil do accent (não é “tema completo”, é detalhe) */
+.cardGlow{
+  box-shadow:
+    0 14px 38px rgba(0,0,0,.45),
+    0 0 0 1px rgba(255,255,255,.06),
+    0 0 26px color-mix(in srgb, var(--accent) 18%, transparent 82%);
 }
 
 /* botões */
@@ -89,13 +104,13 @@ a.navlink:hover{ opacity:1; }
   background: #111;
   color: #fff;
   cursor: pointer;
+  transition: transform .12s ease, border-color .12s ease, background .12s ease;
 }
-.btn:hover{ border-color: rgba(255,255,255,.28); }
+.btn:hover{ border-color: rgba(255,255,255,.28); transform: translateY(-1px); }
 
 .btnAccent{
   border: 1px solid color-mix(in srgb, var(--accent) 60%, rgba(255,255,255,.12) 40%);
   background: color-mix(in srgb, var(--accent) 18%, #111 82%);
-  color:#fff;
 }
 .btnAccent:hover{
   background: color-mix(in srgb, var(--accent) 26%, #111 74%);
@@ -107,15 +122,15 @@ a.navlink:hover{ opacity:1; }
   align-items:center;
   padding:6px 10px;
   border-radius:999px;
-  border:1px solid #333;
+  border:1px solid rgba(255,255,255,.14);
   background:#111;
   font-weight:800;
   font-size:13px;
   color:#fff;
 }
 .pillAccent{
-  border: 1px solid color-mix(in srgb, var(--accent) 55%, #333 45%);
-  background: color-mix(in srgb, var(--accent) 18%, #0b0b0b 82%);
+  border: 1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%);
+  background: color-mix(in srgb, var(--accent) 14%, #0b0b0b 86%);
 }
 `
           }}
@@ -143,13 +158,13 @@ a.navlink:hover{ opacity:1; }
             }}
           >
             <a href="/" style={{ display: "flex", alignItems: "center", gap: 12, textDecoration: "none" }}>
-              {/* logo maior */}
+              {/* logo maior (56px) */}
               <img
                 src="/images/logo_oficial_church.png"
                 alt="LTZ-CHURCH"
-                width={44}
-                height={44}
-                style={{ borderRadius: 10, display: "block" }}
+                width={56}
+                height={56}
+                style={{ borderRadius: 12, display: "block" }}
               />
               <span style={{ color: "#fff", fontWeight: 900, letterSpacing: 0.2 }}>LTZ-CHURCH</span>
             </a>
