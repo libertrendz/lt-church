@@ -17,7 +17,7 @@ type ItemRow = {
   membro_id: string;
   status: string | null;
   notas: string | null;
-  membros?: { id: string; nome: string | null }[] | null;
+  membros?: any; // pode vir como objecto ou array dependendo do select
 };
 
 function fmtLisbon(iso: string | null) {
@@ -34,8 +34,21 @@ function fmtLisbon(iso: string | null) {
   }).format(d);
 }
 
-function labelPessoa(m: { id: string; nome: string | null }) {
-  return (m.nome && m.nome.trim()) || m.id;
+function pessoaLabel(id: string, nome: string | null) {
+  return (nome && nome.trim()) || id;
+}
+
+function pickMembroFromJoin(joined: any): { id: string; nome: string | null } | null {
+  if (!joined) return null;
+  // supabase pode devolver objecto
+  if (typeof joined === "object" && !Array.isArray(joined) && joined.id) {
+    return { id: joined.id, nome: joined.nome ?? null };
+  }
+  // ou array
+  if (Array.isArray(joined) && joined.length > 0 && joined[0]?.id) {
+    return { id: joined[0].id, nome: joined[0].nome ?? null };
+  }
+  return null;
 }
 
 export default function EscalaDetalhePage() {
@@ -56,12 +69,13 @@ export default function EscalaDetalhePage() {
   const [membros, setMembros] = useState<MembroRow[]>([]);
   const [itens, setItens] = useState<ItemRow[]>([]);
 
-  const [addOpen, setAddOpen] = useState<Record<string, boolean>>({});
-  const [pickMembro, setPickMembro] = useState<Record<string, string>>({});
+  // UI state por função
+  const [openAdd, setOpenAdd] = useState<Record<string, boolean>>({});
+  const [pickMembroId, setPickMembroId] = useState<Record<string, string>>({});
   const [pickStatus, setPickStatus] = useState<Record<string, string>>({});
   const [pickNotas, setPickNotas] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState<Record<string, boolean>>({});
-  const [removing, setRemoving] = useState<Record<string, boolean>>({});
+  const [savingFuncao, setSavingFuncao] = useState<Record<string, boolean>>({});
+  const [removingItem, setRemovingItem] = useState<Record<string, boolean>>({});
 
   async function requireSessionOrRedirect() {
     const { data } = await supabase.auth.getSession();
@@ -72,6 +86,11 @@ export default function EscalaDetalhePage() {
     return true;
   }
 
+  async function logout() {
+    await supabase.auth.signOut();
+    router.replace("/login");
+  }
+
   async function load() {
     setBusy(true);
     setErr(null);
@@ -80,6 +99,7 @@ export default function EscalaDetalhePage() {
     const okSession = await requireSessionOrRedirect();
     if (!okSession) return;
 
+    // escala
     const esRes = await supabase
       .from("escalas")
       .select("id, evento_id, igreja_id")
@@ -95,11 +115,12 @@ export default function EscalaDetalhePage() {
     setEscala(escalaRow);
 
     if (!escalaRow.evento_id) {
-      setErr("Escala sem evento associado.");
+      setErr("Esta escala não tem evento associado.");
       setBusy(false);
       return;
     }
 
+    // evento
     const evRes = await supabase
       .from("agenda_eventos")
       .select("id, starts_at, titulo, atividade_id")
@@ -114,7 +135,7 @@ export default function EscalaDetalhePage() {
     const eventoRow = evRes.data as EventoRow;
     setEvento(eventoRow);
 
-    // Funções “disponíveis” para esta atividade (defaults activos)
+    // funções activas para este tipo (defaults)
     if (eventoRow.atividade_id) {
       const fRes = await supabase
         .from("atividade_funcoes_defaults")
@@ -128,19 +149,17 @@ export default function EscalaDetalhePage() {
         return;
       }
 
-      const fs: FuncaoRow[] =
-        (fRes.data ?? [])
-          .map((r: any) => (r.funcoes ? { id: r.funcoes.id, nome: r.funcoes.nome } : null))
-          .filter(Boolean) ?? [];
+      const fs: FuncaoRow[] = ((fRes.data as any[]) ?? [])
+        .map((r) => (r.funcoes ? { id: r.funcoes.id as string, nome: r.funcoes.nome as string } : null))
+        .filter(Boolean) as FuncaoRow[];
 
-      // ordena por nome
       fs.sort((a, b) => a.nome.localeCompare(b.nome, "pt-PT"));
       setFuncoes(fs);
     } else {
       setFuncoes([]);
     }
 
-    // Itens já atribuídos (por função)
+    // itens existentes (equipa)
     const itRes = await supabase
       .from("escala_itens")
       .select("id, funcao_id, membro_id, status, notas, membros:membro_id(id, nome)")
@@ -151,9 +170,9 @@ export default function EscalaDetalhePage() {
       setBusy(false);
       return;
     }
-    setItens(((itRes.data as unknown) as ItemRow[]) ?? []);
+    setItens((itRes.data as unknown as ItemRow[]) ?? []);
 
-    // Membros para dropdown
+    // lista de membros (dropdown)
     const memRes = await supabase.from("membros").select("id, nome").order("nome", { ascending: true }).limit(500);
     if (memRes.error) {
       setErr(memRes.error.message);
@@ -166,21 +185,16 @@ export default function EscalaDetalhePage() {
   }
 
   useEffect(() => {
-    let active = true;
+    let alive = true;
     (async () => {
-      if (!active) return;
+      if (!alive) return;
       await load();
     })();
     return () => {
-      active = false;
+      alive = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [escalaId]);
-
-  async function logout() {
-    await supabase.auth.signOut();
-    router.replace("/login");
-  }
 
   const itemsByFuncao = useMemo(() => {
     const m = new Map<string, ItemRow[]>();
@@ -192,23 +206,18 @@ export default function EscalaDetalhePage() {
     return m;
   }, [itens]);
 
-  function isOpen(funcaoId: string) {
-    return !!addOpen[funcaoId];
-  }
-
-  async function addPessoa(funcao: FuncaoRow) {
-    const funcaoId = funcao.id;
-    const membroId = pickMembro[funcaoId];
+  async function addPessoa(funcaoId: string) {
+    const membroId = (pickMembroId[funcaoId] ?? "").trim();
     if (!membroId) {
       setErr("Seleciona um membro.");
       return;
     }
 
-    setSaving((p) => ({ ...p, [funcaoId]: true }));
+    setSavingFuncao((p) => ({ ...p, [funcaoId]: true }));
     setErr(null);
     setOk(null);
 
-    const status = (pickStatus[funcaoId] ?? "confirmado").trim() || "confirmado";
+    const status = ((pickStatus[funcaoId] ?? "confirmado").trim() || "confirmado") as string;
     const notas = (pickNotas[funcaoId] ?? "").trim() || null;
 
     const res = await supabase.rpc("add_member_to_funcao", {
@@ -219,32 +228,32 @@ export default function EscalaDetalhePage() {
       p_notas: notas
     });
 
-    setSaving((p) => ({ ...p, [funcaoId]: false }));
+    setSavingFuncao((p) => ({ ...p, [funcaoId]: false }));
 
     if (res.error) {
-      // no telemóvel fica difícil “Failed to fetch”; isto garante mensagem útil
-      setErr(res.error.message);
+      // no telemóvel às vezes aparece “Failed to fetch”; isto força mensagem útil quando existe
+      setErr(res.error.message || "Erro ao adicionar. Verifica sessão e permissões.");
       return;
     }
 
     setOk("Adicionado.");
-    setPickMembro((p) => ({ ...p, [funcaoId]: "" }));
+    setPickMembroId((p) => ({ ...p, [funcaoId]: "" }));
     setPickNotas((p) => ({ ...p, [funcaoId]: "" }));
-    setAddOpen((p) => ({ ...p, [funcaoId]: false }));
+    setOpenAdd((p) => ({ ...p, [funcaoId]: false }));
     await load();
   }
 
-  async function removerItem(itemId: string) {
-    setRemoving((p) => ({ ...p, [itemId]: true }));
+  async function remover(itemId: string) {
+    setRemovingItem((p) => ({ ...p, [itemId]: true }));
     setErr(null);
     setOk(null);
 
     const res = await supabase.rpc("remove_escala_item", { p_item_id: itemId });
 
-    setRemoving((p) => ({ ...p, [itemId]: false }));
+    setRemovingItem((p) => ({ ...p, [itemId]: false }));
 
     if (res.error) {
-      setErr(res.error.message);
+      setErr(res.error.message || "Erro ao remover. Verifica sessão e permissões.");
       return;
     }
 
@@ -253,48 +262,53 @@ export default function EscalaDetalhePage() {
   }
 
   return (
-    <main style={{ padding: 24, maxWidth: 1100, color: "#fff" }}>
-      <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
-        <a href="/cultos" style={{ color: "#fff", opacity: 0.9, textDecoration: "underline" }}>
+    <main style={{ padding: 18, maxWidth: 1100, margin: "0 auto", color: "#fff" }}>
+      <header style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <a href="/cultos" style={{ color: "#fff", textDecoration: "underline", opacity: 0.9 }}>
           Cultos & Escalas
         </a>
-        <a href="/agenda" style={{ color: "#fff", opacity: 0.9, textDecoration: "underline" }}>
+        <a href="/agenda" style={{ color: "#fff", textDecoration: "underline", opacity: 0.9 }}>
           Agenda
         </a>
+        <span style={{ flex: 1 }} />
         <button
           onClick={logout}
           style={{ padding: "10px 14px", borderRadius: 12, border: "1px solid #444", background: "#111", color: "#fff" }}
         >
           Sair
         </button>
-        {ok ? <span style={{ color: "#7CFF7C" }}>{ok}</span> : null}
-      </div>
+      </header>
 
-      <h1 style={{ marginTop: 14 }}>Equipa do Culto</h1>
+      <h1 style={{ marginTop: 14, marginBottom: 6 }}>Equipa do Culto</h1>
 
       {busy ? <p>A carregar…</p> : null}
       {err ? <p style={{ color: "#ff6b6b", whiteSpace: "pre-wrap" }}>{err}</p> : null}
+      {ok ? <p style={{ color: "#7CFF7C" }}>{ok}</p> : null}
 
       {!busy ? (
-        <div style={{ marginTop: 12, padding: 14, borderRadius: 16, border: "1px solid #333", background: "#0b0b0b" }}>
+        <section style={{ marginTop: 10, padding: 14, borderRadius: 16, border: "1px solid #333", background: "#0b0b0b" }}>
           <div style={{ fontWeight: 900 }}>
-            {evento?.starts_at ? `${fmtLisbon(evento.starts_at)} · ${evento.titulo ?? "Culto"}` : "Culto —"}
+            {evento?.starts_at ? `${fmtLisbon(evento.starts_at)} · ${evento.titulo ?? "Culto"}` : (evento?.titulo ?? "Culto")}
           </div>
-          <div style={{ opacity: 0.8, marginTop: 4 }}>Escala ID: {escala?.id}</div>
-        </div>
+          <div style={{ opacity: 0.8, marginTop: 4 }}>Escala: {escala?.id}</div>
+        </section>
       ) : null}
 
       {!busy ? (
-        <div style={{ marginTop: 16, display: "grid", gap: 14 }}>
+        <div style={{ marginTop: 14, display: "grid", gap: 14 }}>
           {funcoes.length === 0 ? (
-            <div style={{ padding: 14, borderRadius: 16, border: "1px solid #333", background: "#0b0b0b", opacity: 0.9 }}>
-              Não há funções activas para este tipo de evento. (Define em “defaults” da actividade.)
+            <div style={{ padding: 14, borderRadius: 16, border: "1px solid #333", background: "#0b0b0b" }}>
+              <div style={{ fontWeight: 900 }}>Sem funções configuradas</div>
+              <div style={{ opacity: 0.85, marginTop: 6 }}>
+                Este tipo de evento ainda não tem funções activas. (Admin: definir em defaults do tipo de evento.)
+              </div>
             </div>
           ) : null}
 
           {funcoes.map((f) => {
             const list = itemsByFuncao.get(f.id) ?? [];
-            const savingThis = !!saving[f.id];
+            const adding = !!openAdd[f.id];
+            const saving = !!savingFuncao[f.id];
 
             return (
               <section key={f.id} style={{ border: "1px solid #333", borderRadius: 16, background: "#0b0b0b" }}>
@@ -307,9 +321,9 @@ export default function EscalaDetalhePage() {
                   {list.length === 0 ? <div style={{ opacity: 0.75 }}>Vazio</div> : null}
 
                   {list.map((it) => {
-                    const m = it.membros && it.membros.length > 0 ? it.membros[0] : null;
-                    const name = m ? labelPessoa({ id: m.id, nome: m.nome }) : it.membro_id;
-                    const removingThis = !!removing[it.id];
+                    const m = pickMembroFromJoin(it.membros);
+                    const label = m ? pessoaLabel(m.id, m.nome) : it.membro_id;
+                    const removing = !!removingItem[it.id];
 
                     return (
                       <div
@@ -325,7 +339,7 @@ export default function EscalaDetalhePage() {
                         }}
                       >
                         <div style={{ display: "grid", gap: 4 }}>
-                          <div style={{ fontWeight: 800 }}>{name}</div>
+                          <div style={{ fontWeight: 800 }}>{label}</div>
                           <div style={{ opacity: 0.8, fontSize: 13 }}>
                             {it.status ? `Status: ${it.status}` : null}
                             {it.status && it.notas ? " · " : null}
@@ -334,13 +348,13 @@ export default function EscalaDetalhePage() {
                         </div>
 
                         <button
-                          onClick={() => removerItem(it.id)}
-                          disabled={removingThis}
+                          onClick={() => remover(it.id)}
+                          disabled={removing}
                           style={{
                             padding: "10px 14px",
                             borderRadius: 12,
                             border: "1px solid #444",
-                            background: removingThis ? "#222" : "#2a0f0f",
+                            background: removing ? "#222" : "#2a0f0f",
                             color: "#fff"
                           }}
                         >
@@ -350,9 +364,9 @@ export default function EscalaDetalhePage() {
                     );
                   })}
 
-                  {!isOpen(f.id) ? (
+                  {!adding ? (
                     <button
-                      onClick={() => setAddOpen((p) => ({ ...p, [f.id]: true }))}
+                      onClick={() => setOpenAdd((p) => ({ ...p, [f.id]: true }))}
                       style={{
                         padding: "10px 14px",
                         borderRadius: 12,
@@ -370,14 +384,14 @@ export default function EscalaDetalhePage() {
                         <label style={{ display: "grid", gap: 6 }}>
                           <span>Membro</span>
                           <select
-                            value={pickMembro[f.id] ?? ""}
-                            onChange={(e) => setPickMembro((p) => ({ ...p, [f.id]: e.target.value }))}
+                            value={pickMembroId[f.id] ?? ""}
+                            onChange={(e) => setPickMembroId((p) => ({ ...p, [f.id]: e.target.value }))}
                             style={{ padding: 10, borderRadius: 10, border: "1px solid #333", background: "#111", color: "#fff" }}
                           >
                             <option value="">—</option>
                             {membros.map((m) => (
                               <option key={m.id} value={m.id}>
-                                {labelPessoa({ id: m.id, nome: m.nome })}
+                                {pessoaLabel(m.id, m.nome)}
                               </option>
                             ))}
                           </select>
@@ -407,13 +421,13 @@ export default function EscalaDetalhePage() {
 
                       <div style={{ display: "flex", gap: 10 }}>
                         <button
-                          onClick={() => addPessoa(f)}
-                          disabled={savingThis}
+                          onClick={() => addPessoa(f.id)}
+                          disabled={saving}
                           style={{
                             padding: "10px 14px",
                             borderRadius: 12,
                             border: "1px solid #444",
-                            background: savingThis ? "#222" : "#0f2a12",
+                            background: saving ? "#222" : "#0f2a12",
                             color: "#fff"
                           }}
                         >
@@ -421,7 +435,7 @@ export default function EscalaDetalhePage() {
                         </button>
 
                         <button
-                          onClick={() => setAddOpen((p) => ({ ...p, [f.id]: false }))}
+                          onClick={() => setOpenAdd((p) => ({ ...p, [f.id]: false }))}
                           style={{
                             padding: "10px 14px",
                             borderRadius: 12,
