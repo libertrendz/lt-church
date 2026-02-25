@@ -5,17 +5,17 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabase/client";
 
-type NavItem = { href: string; label: string; group?: "main" | "account" };
+type NavItem = { href: string; label: string };
 
 const NAV: NavItem[] = [
-  { href: "/", label: "Início", group: "main" },
-  { href: "/cultos", label: "Cultos & Escalas", group: "main" },
-  { href: "/agenda", label: "Agenda", group: "main" },
-  { href: "/membros", label: "Membros", group: "main" },
-  { href: "/departamentos", label: "Departamentos", group: "main" },
-  { href: "/funcoes", label: "Funções", group: "main" },
-  { href: "/definicoes/aparencia", label: "Aparência", group: "account" },
-  { href: "/me", label: "Perfil", group: "account" }
+  { href: "/", label: "Início" },
+  { href: "/cultos", label: "Cultos & Escalas" },
+  { href: "/agenda", label: "Agenda" },
+  { href: "/membros", label: "Membros" },
+  { href: "/departamentos", label: "Departamentos" },
+  { href: "/funcoes", label: "Funções" },
+  { href: "/definicoes/aparencia", label: "Aparência" },
+  { href: "/me", label: "Perfil" }
 ];
 
 function Hamburger({ open }: { open: boolean }) {
@@ -44,10 +44,10 @@ export default function AppHeader() {
   const [open, setOpen] = useState(false);
   const [tenantNome, setTenantNome] = useState<string | null>(null);
 
-  // não mostrar header no login (fica mais “app” e menos “site”)
+  // Não mostrar header no login
   if (pathname?.startsWith("/login")) return null;
 
-  // fecha ao navegar
+  // Fecha drawer ao navegar
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
@@ -61,7 +61,7 @@ export default function AppHeader() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // bloquear scroll quando drawer aberto
+  // Bloquear scroll quando drawer aberto
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -71,13 +71,12 @@ export default function AppHeader() {
     };
   }, [open]);
 
-  // carregar nome do tenant (igreja)
+  // Carregar nome da igreja (tenant)
   useEffect(() => {
     let active = true;
 
     (async () => {
       try {
-        // cache local para não bater sempre
         const cached = localStorage.getItem("ltz_tenant_nome");
         if (cached && active) setTenantNome(cached);
 
@@ -88,7 +87,7 @@ export default function AppHeader() {
         const uRes = await supabase.from("usuarios").select("igreja_id").eq("id", userId).single();
         if (uRes.error) return;
 
-        const igrejaId = uRes.data?.igreja_id as string | null;
+        const igrejaId = (uRes.data?.igreja_id as string | null) || null;
         if (!igrejaId) return;
 
         const iRes = await supabase.from("igrejas").select("nome").eq("id", igrejaId).single();
@@ -109,7 +108,7 @@ export default function AppHeader() {
     };
   }, [supabase]);
 
-  const activeHref = (href: string) => {
+  const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
     return pathname?.startsWith(href);
   };
@@ -118,9 +117,6 @@ export default function AppHeader() {
     await supabase.auth.signOut();
     router.replace("/login");
   }
-
-  const mainItems = NAV.filter((n) => n.group === "main");
-  const accountItems = NAV.filter((n) => n.group === "account");
 
   return (
     <header
@@ -166,28 +162,23 @@ export default function AppHeader() {
 
         {/* Desktop nav */}
         <div className="navDesktop" style={{ display: "none", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-          {mainItems.map((item) => (
+          {NAV.map((item) => (
             <a
               key={item.href}
               href={item.href}
               className="navlink"
               style={{
                 textDecoration: "none",
-                opacity: activeHref(item.href) ? 1 : 0.9,
-                fontWeight: activeHref(item.href) ? 900 : 800,
-                borderBottom: activeHref(item.href) ? "2px solid var(--accent)" : "2px solid transparent",
+                opacity: isActive(item.href) ? 1 : 0.9,
+                fontWeight: isActive(item.href) ? 900 : 800,
+                borderBottom: isActive(item.href) ? "2px solid var(--accent)" : "2px solid transparent",
                 paddingBottom: 6
               }}
             >
               {item.label}
             </a>
           ))}
-          <a className="navlink" href="/definicoes/aparencia" style={{ textDecoration: "none", opacity: 0.9 }}>
-            Aparência
-          </a>
-          <a className="navlink" href="/me" style={{ textDecoration: "none", opacity: 0.9 }}>
-            Perfil
-          </a>
+
           <button onClick={logout} className="btn" style={{ padding: "8px 10px", borderRadius: 12 }}>
             Sair
           </button>
@@ -215,6 +206,7 @@ export default function AppHeader() {
         </button>
       </nav>
 
+      {/* CSS simples para desktop vs mobile */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -229,11 +221,10 @@ export default function AppHeader() {
       {/* Drawer (mobile) */}
       {open ? (
         <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 60 }}>
-          <div
-            onClick={() => setOpen(false)}
-            style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.55)" }}
-          />
+          {/* backdrop */}
+          <div onClick={() => setOpen(false)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.55)" }} />
 
+          {/* panel */}
           <div
             style={{
               position: "absolute",
@@ -259,9 +250,8 @@ export default function AppHeader() {
             </div>
 
             <div style={{ overflow: "auto", paddingRight: 2 }}>
-              {/* MAIN */}
               <div style={{ display: "grid", gap: 10 }}>
-                {mainItems.map((item) => (
+                {NAV.map((item) => (
                   <a
                     key={item.href}
                     href={item.href}
@@ -270,35 +260,11 @@ export default function AppHeader() {
                       color: "#fff",
                       padding: "12px 12px",
                       borderRadius: 14,
-                      border: activeHref(item.href)
+                      border: isActive(item.href)
                         ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
                         : "1px solid rgba(255,255,255,.10)",
-                      background: activeHref(item.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "#0b0b0b",
-                      fontWeight: activeHref(item.href) ? 950 : 850
-                    }}
-                  >
-                    {item.label}
-                  </a>
-                ))}
-              </div>
-
-              {/* ACCOUNT */}
-              <div style={{ marginTop: 14, opacity: 0.75, fontSize: 12, fontWeight: 900 }}>Conta</div>
-              <div style={{ marginTop: 10, display: "grid", gap: 10 }}>
-                {accountItems.map((item) => (
-                  <a
-                    key={item.href}
-                    href={item.href}
-                    style={{
-                      textDecoration: "none",
-                      color: "#fff",
-                      padding: "12px 12px",
-                      borderRadius: 14,
-                      border: activeHref(item.href)
-                        ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
-                        : "1px solid rgba(255,255,255,.10)",
-                      background: activeHref(item.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "#0b0b0b",
-                      fontWeight: activeHref(item.href) ? 950 : 850
+                      background: isActive(item.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "#0b0b0b",
+                      fontWeight: isActive(item.href) ? 950 : 850
                     }}
                   >
                     {item.label}
