@@ -29,6 +29,29 @@ function fmtLisbon(iso: string | null) {
   }).format(d);
 }
 
+function monthKeyLisbon(iso: string | null) {
+  if (!iso) return "sem-data";
+  const d = new Date(iso);
+  const y = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Lisbon", year: "numeric" }).format(d);
+  const m = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Lisbon", month: "2-digit" }).format(d);
+  return `${y}-${m}`; // YYYY-MM
+}
+
+function monthLabelLisbonFromKey(key: string) {
+  if (key === "sem-data") return "Sem data";
+  const [y, m] = key.split("-").map((x) => parseInt(x, 10));
+  // criar uma data segura no dia 1, hora 12 UTC para evitar edge cases
+  const d = new Date(Date.UTC(y, m - 1, 1, 12, 0, 0));
+  return new Intl.DateTimeFormat("pt-PT", { timeZone: "Europe/Lisbon", month: "long", year: "numeric" }).format(d);
+}
+
+function currentMonthKeyLisbon() {
+  const now = new Date();
+  const y = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Lisbon", year: "numeric" }).format(now);
+  const m = new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Lisbon", month: "2-digit" }).format(now);
+  return `${y}-${m}`;
+}
+
 function Pill({ label, tone }: { label: string; tone: "neutral" | "warn" | "ok" }) {
   const bg = tone === "ok" ? "#0f2a12" : tone === "warn" ? "#2a1d0f" : "#111";
   const bd = tone === "ok" ? "#1f6a2a" : tone === "warn" ? "#6a4a1f" : "#333";
@@ -64,6 +87,9 @@ export default function CultosHubPage() {
   const [escalaByEvento, setEscalaByEvento] = useState<Map<string, EscalaRow>>(new Map());
   const [pessoasByEscala, setPessoasByEscala] = useState<Map<string, number>>(new Map());
   const [creating, setCreating] = useState<Record<string, boolean>>({});
+
+  // colapsos por mês
+  const [openMonths, setOpenMonths] = useState<Record<string, boolean>>({});
 
   async function requireSessionOrRedirect() {
     const { data } = await supabase.auth.getSession();
@@ -108,7 +134,7 @@ export default function CultosHubPage() {
       .eq("atividade_id", cultoAtividadeId)
       .gte("starts_at", nowIso)
       .order("starts_at", { ascending: true })
-      .limit(30);
+      .limit(60);
 
     if (evRes.error) {
       setErr(evRes.error.message);
@@ -118,6 +144,14 @@ export default function CultosHubPage() {
 
     const evs = (evRes.data as EventoRow[]) ?? [];
     setEventos(evs);
+
+    // abrir automaticamente o mês atual (e fechar os outros por defeito)
+    const cur = currentMonthKeyLisbon();
+    setOpenMonths((prev) => {
+      // preserva escolhas do utilizador se já existirem
+      if (Object.keys(prev).length > 0) return prev;
+      return { [cur]: true };
+    });
 
     // 3) congregações (nomes)
     const congIds = Array.from(new Set(evs.map((e) => e.congregacao_id).filter(Boolean))) as string[];
@@ -156,7 +190,7 @@ export default function CultosHubPage() {
     escalas.forEach((s) => mapEsc.set(s.evento_id, s));
     setEscalaByEvento(mapEsc);
 
-    // 5) contar pessoas por escala (via escala_itens) — HUMANO, sem slots/capacidade
+    // 5) contar pessoas por escala (via escala_itens)
     if (escalas.length > 0) {
       const escalaIds = escalas.map((s) => s.id);
       const itRes = await supabase.from("escala_itens").select("id, escala_id").in("escala_id", escalaIds);
@@ -209,6 +243,22 @@ export default function CultosHubPage() {
     router.push(`/escalas/${escalaId}`);
   }
 
+  const grouped = useMemo(() => {
+    const m = new Map<string, EventoRow[]>();
+    for (const ev of eventos) {
+      const k = monthKeyLisbon(ev.starts_at);
+      if (!m.has(k)) m.set(k, []);
+      m.get(k)!.push(ev);
+    }
+    // ordenar keys por data asc
+    const keys = Array.from(m.keys()).sort((a, b) => a.localeCompare(b));
+    return { map: m, keys };
+  }, [eventos]);
+
+  function toggleMonth(key: string) {
+    setOpenMonths((p) => ({ ...p, [key]: !p[key] }));
+  }
+
   return (
     <main style={{ padding: 18, maxWidth: 1100, margin: "0 auto", color: "#fff" }}>
       <header style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
@@ -243,76 +293,113 @@ export default function CultosHubPage() {
             </div>
           ) : null}
 
-          {eventos.map((ev) => {
-            const escala = escalaByEvento.get(ev.id) ?? null;
-            const pessoas = escala ? (pessoasByEscala.get(escala.id) ?? 0) : 0;
-
-            const congName = ev.congregacao_id ? congs.get(ev.congregacao_id)?.nome ?? "—" : "—";
-            const title = ev.titulo?.trim() ? ev.titulo : "Culto";
-
-            const hasEscala = !!escala;
-            const hasEquipa = pessoas > 0;
-
-            const pill = !hasEscala ? (
-              <Pill label="Sem escala" tone="neutral" />
-            ) : !hasEquipa ? (
-              <Pill label="Sem equipa" tone="warn" />
-            ) : (
-              <Pill label={`${pessoas} pessoa(s)`} tone="ok" />
-            );
-
-            const btnDisabled = creating[ev.id] === true;
+          {grouped.keys.map((k) => {
+            const list = grouped.map.get(k) ?? [];
+            const isOpen = !!openMonths[k];
 
             return (
-              <div
-                key={ev.id}
-                style={{
-                  border: "1px solid #333",
-                  borderRadius: 18,
-                  background: "#0b0b0b",
-                  padding: 16,
-                  display: "grid",
-                  gap: 10
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
-                  <div style={{ fontWeight: 900, fontSize: 18 }}>{title}</div>
+              <section key={k} style={{ border: "1px solid #333", borderRadius: 16, background: "#0b0b0b" }}>
+                <button
+                  onClick={() => toggleMonth(k)}
+                  style={{
+                    width: "100%",
+                    textAlign: "left",
+                    padding: 14,
+                    background: "transparent",
+                    border: "none",
+                    color: "#fff",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                    cursor: "pointer"
+                  }}
+                >
+                  <div style={{ fontWeight: 900, fontSize: 16, textTransform: "capitalize" }}>
+                    {monthLabelLisbonFromKey(k)}
+                  </div>
+                  <div style={{ display: "flex", gap: 10, alignItems: "center", opacity: 0.9 }}>
+                    <span>{list.length} culto(s)</span>
+                    <span style={{ opacity: 0.8 }}>{isOpen ? "▾" : "▸"}</span>
+                  </div>
+                </button>
 
-                  {hasEscala ? (
-                    <button
-                      onClick={() => router.push(`/escalas/${escala!.id}`)}
-                      style={{
-                        padding: "10px 14px",
-                        borderRadius: 14,
-                        border: "1px solid #444",
-                        background: "#111",
-                        color: "#fff"
-                      }}
-                    >
-                      Gerir escala
-                    </button>
-                  ) : (
-                    <button
-                      disabled={btnDisabled}
-                      onClick={() => createEscalaForEvento(ev.id)}
-                      style={{
-                        padding: "10px 14px",
-                        borderRadius: 14,
-                        border: "1px solid #444",
-                        background: btnDisabled ? "#222" : "#111",
-                        color: "#fff"
-                      }}
-                    >
-                      Criar escala
-                    </button>
-                  )}
-                </div>
+                {isOpen ? (
+                  <div style={{ borderTop: "1px solid #222", padding: 14, display: "grid", gap: 12 }}>
+                    {list.map((ev) => {
+                      const escala = escalaByEvento.get(ev.id) ?? null;
+                      const pessoas = escala ? (pessoasByEscala.get(escala.id) ?? 0) : 0;
 
-                <div style={{ opacity: 0.9 }}>{fmtLisbon(ev.starts_at)}</div>
-                <div style={{ opacity: 0.8 }}>Congregação: {congName}</div>
+                      const congName = ev.congregacao_id ? congs.get(ev.congregacao_id)?.nome ?? "—" : "—";
+                      const title = ev.titulo?.trim() ? ev.titulo : "Culto";
 
-                <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>{pill}</div>
-              </div>
+                      const hasEscala = !!escala;
+                      const hasEquipa = pessoas > 0;
+
+                      const pill = !hasEscala ? (
+                        <Pill label="Sem escala" tone="neutral" />
+                      ) : !hasEquipa ? (
+                        <Pill label="Sem equipa" tone="warn" />
+                      ) : (
+                        <Pill label={`${pessoas} pessoa(s)`} tone="ok" />
+                      );
+
+                      const btnDisabled = creating[ev.id] === true;
+
+                      return (
+                        <div
+                          key={ev.id}
+                          style={{
+                            border: "1px solid #333",
+                            borderRadius: 18,
+                            background: "#070707",
+                            padding: 14,
+                            display: "grid",
+                            gap: 10
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
+                            <div style={{ fontWeight: 900, fontSize: 18 }}>{title}</div>
+
+                            {hasEscala ? (
+                              <button
+                                onClick={() => router.push(`/escalas/${escala!.id}`)}
+                                style={{
+                                  padding: "10px 14px",
+                                  borderRadius: 14,
+                                  border: "1px solid #444",
+                                  background: "#111",
+                                  color: "#fff"
+                                }}
+                              >
+                                Gerir escala
+                              </button>
+                            ) : (
+                              <button
+                                disabled={btnDisabled}
+                                onClick={() => createEscalaForEvento(ev.id)}
+                                style={{
+                                  padding: "10px 14px",
+                                  borderRadius: 14,
+                                  border: "1px solid #444",
+                                  background: btnDisabled ? "#222" : "#111",
+                                  color: "#fff"
+                                }}
+                              >
+                                Criar escala
+                              </button>
+                            )}
+                          </div>
+
+                          <div style={{ opacity: 0.9 }}>{fmtLisbon(ev.starts_at)}</div>
+                          <div style={{ opacity: 0.8 }}>Congregação: {congName}</div>
+
+                          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>{pill}</div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </section>
             );
           })}
         </div>
