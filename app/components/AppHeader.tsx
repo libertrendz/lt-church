@@ -2,7 +2,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabase/client";
 
 type NavItem = { href: string; label: string };
@@ -38,13 +38,12 @@ function Hamburger({ open }: { open: boolean }) {
 
 export default function AppHeader() {
   const pathname = usePathname();
-  const router = useRouter();
   const supabase = useMemo(() => supabaseBrowser(), []);
 
   const [open, setOpen] = useState(false);
   const [tenantNome, setTenantNome] = useState<string>("—");
 
-  // ✅ não mostrar header no login
+  // não mostrar header no login
   if (pathname?.startsWith("/login")) return null;
 
   // fecha ao navegar
@@ -61,7 +60,7 @@ export default function AppHeader() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // bloquear scroll quando drawer aberto
+  // bloquear scroll quando menu aberto
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -71,19 +70,17 @@ export default function AppHeader() {
     };
   }, [open]);
 
-  // ✅ carregar nome da igreja (tenant) com cache local
+  // carregar nome da igreja (tenant) com cache local
   useEffect(() => {
     let active = true;
 
     (async () => {
       try {
-        // cache imediato (evita “piscas”)
         const cached = localStorage.getItem("ltz_tenant_nome");
         if (cached && active) setTenantNome(cached);
 
         const { data: sess } = await supabase.auth.getSession();
         const userId = sess.session?.user?.id;
-
         if (!userId) {
           if (active) setTenantNome("—");
           return;
@@ -114,7 +111,7 @@ export default function AppHeader() {
     };
   }, [supabase]);
 
-  const active = (href: string) => {
+  const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
     return pathname?.startsWith(href);
   };
@@ -125,7 +122,7 @@ export default function AppHeader() {
     } catch {
       // ignora
     }
-    // ✅ hard redirect evita “client-side exception” pós-logout
+    // hard redirect evita crash pós-logout
     window.location.href = "/login";
   }
 
@@ -197,9 +194,9 @@ export default function AppHeader() {
               className="navlink"
               style={{
                 textDecoration: "none",
-                opacity: active(item.href) ? 1 : 0.9,
-                fontWeight: active(item.href) ? 900 : 800,
-                borderBottom: active(item.href) ? "2px solid var(--accent)" : "2px solid transparent",
+                opacity: isActive(item.href) ? 1 : 0.9,
+                fontWeight: isActive(item.href) ? 900 : 800,
+                borderBottom: isActive(item.href) ? "2px solid var(--accent)" : "2px solid transparent",
                 paddingBottom: 6
               }}
             >
@@ -234,7 +231,7 @@ export default function AppHeader() {
         </button>
       </nav>
 
-      {/* CSS simples para desktop vs mobile */}
+      {/* CSS desktop vs mobile */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -246,7 +243,7 @@ export default function AppHeader() {
         }}
       />
 
-      {/* Drawer (mobile) — ✅ “bulletproof”: flex + flex:1 + overflow */}
+      {/* ✅ Drawer (mobile) OPACO, sem transparências */}
       {open ? (
         <div
           role="dialog"
@@ -254,6 +251,83 @@ export default function AppHeader() {
           style={{
             position: "fixed",
             inset: 0,
-            zIndex: 60
+            zIndex: 9999,
+            background: "#050505" // ← opaco: elimina sobreposição com o fundo
           }}
         >
+          {/* topo */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+              gap: 12,
+              padding: 14,
+              borderBottom: "1px solid rgba(255,255,255,.08)"
+            }}
+          >
+            <div style={{ fontWeight: 950, fontSize: 16 }}>Menu</div>
+            <button
+              onClick={() => setOpen(false)}
+              className="btn"
+              style={{ padding: "8px 10px", borderRadius: 12 }}
+            >
+              Fechar
+            </button>
+          </div>
+
+          {/* conteúdo */}
+          <div style={{ padding: 14 }}>
+            <div
+              style={{
+                border: "1px solid rgba(255,255,255,.10)",
+                borderRadius: 18,
+                background: "#0b0b0b",
+                boxShadow: "0 18px 60px rgba(0,0,0,.55)",
+                padding: 12
+              }}
+            >
+              <div style={{ display: "grid", gap: 10 }}>
+                {NAV.map((item) => (
+                  <a
+                    key={item.href}
+                    href={item.href}
+                    style={{
+                      textDecoration: "none",
+                      color: "#fff",
+                      padding: "14px 12px",
+                      borderRadius: 14,
+                      border: isActive(item.href)
+                        ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
+                        : "1px solid rgba(255,255,255,.10)",
+                      background: isActive(item.href)
+                        ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)"
+                        : "#101010",
+                      fontWeight: isActive(item.href) ? 950 : 850
+                    }}
+                  >
+                    {item.label}
+                  </a>
+                ))}
+              </div>
+
+              <div style={{ height: 12 }} />
+
+              <button
+                onClick={logout}
+                className="btn btnAccent"
+                style={{ width: "100%", borderRadius: 14, padding: "12px 14px" }}
+              >
+                Sair
+              </button>
+
+              <div style={{ marginTop: 10, opacity: 0.7, fontSize: 12, lineHeight: 1.35 }}>
+                Dark fixo + cor de contraste (accent).
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+    </header>
+  );
+}
