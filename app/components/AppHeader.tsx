@@ -218,11 +218,14 @@ export default function AppHeader() {
         }}
       />
 
-      {/* Drawer (mobile) */}
+      {/* Drawer (mobile) — versão “bulletproof” */}
       {open ? (
         <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 60 }}>
           {/* backdrop */}
-          <div onClick={() => setOpen(false)} style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.55)" }} />
+          <div
+            onClick={() => setOpen(false)}
+            style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.55)" }}
+          />
 
           {/* panel */}
           <div
@@ -237,11 +240,12 @@ export default function AppHeader() {
               borderLeft: "1px solid rgba(255,255,255,.10)",
               boxShadow: "0 18px 60px rgba(0,0,0,.6)",
               padding: 14,
-              display: "grid",
-              gridTemplateRows: "auto 1fr auto",
+              display: "flex",
+              flexDirection: "column",
               gap: 12
             }}
           >
+            {/* top */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
               <div style={{ fontWeight: 950, fontSize: 16 }}>Menu</div>
               <button onClick={() => setOpen(false)} className="btn" style={{ padding: "8px 10px", borderRadius: 12 }}>
@@ -249,7 +253,8 @@ export default function AppHeader() {
               </button>
             </div>
 
-            <div style={{ overflow: "auto", paddingRight: 2 }}>
+            {/* list (flex:1 garante que aparece sempre) */}
+            <div style={{ flex: 1, overflow: "auto", paddingRight: 2 }}>
               <div style={{ display: "grid", gap: 10 }}>
                 {NAV.map((item) => (
                   <a
@@ -263,7 +268,9 @@ export default function AppHeader() {
                       border: isActive(item.href)
                         ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
                         : "1px solid rgba(255,255,255,.10)",
-                      background: isActive(item.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "#0b0b0b",
+                      background: isActive(item.href)
+                        ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)"
+                        : "#0b0b0b",
                       fontWeight: isActive(item.href) ? 950 : 850
                     }}
                   >
@@ -273,6 +280,7 @@ export default function AppHeader() {
               </div>
             </div>
 
+            {/* bottom */}
             <button onClick={logout} className="btn btnAccent" style={{ width: "100%", borderRadius: 14 }}>
               Sair
             </button>
