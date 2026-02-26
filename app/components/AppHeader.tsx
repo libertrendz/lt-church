@@ -1,9 +1,8 @@
 /* PATH: app/components/AppHeader.tsx */
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { usePathname, useRouter } from "next/navigation";
-import { supabaseBrowser } from "../../lib/supabase/client";
+import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 
 type NavItem = { href: string; label: string };
 
@@ -38,16 +37,9 @@ function Hamburger({ open }: { open: boolean }) {
 
 export default function AppHeader() {
   const pathname = usePathname();
-  const router = useRouter();
-  const supabase = useMemo(() => supabaseBrowser(), []);
-
   const [open, setOpen] = useState(false);
-  const [tenantNome, setTenantNome] = useState<string | null>(null);
 
-  // Não mostrar header no login
-  if (pathname?.startsWith("/login")) return null;
-
-  // Fecha drawer ao navegar
+  // fecha ao navegar
   useEffect(() => {
     setOpen(false);
   }, [pathname]);
@@ -61,7 +53,7 @@ export default function AppHeader() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // Bloquear scroll quando drawer aberto
+  // bloquear scroll quando drawer aberto
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -71,52 +63,10 @@ export default function AppHeader() {
     };
   }, [open]);
 
-  // Carregar nome da igreja (tenant)
-  useEffect(() => {
-    let active = true;
-
-    (async () => {
-      try {
-        const cached = localStorage.getItem("ltz_tenant_nome");
-        if (cached && active) setTenantNome(cached);
-
-        const { data: sess } = await supabase.auth.getSession();
-        const userId = sess.session?.user?.id;
-        if (!userId) return;
-
-        const uRes = await supabase.from("usuarios").select("igreja_id").eq("id", userId).single();
-        if (uRes.error) return;
-
-        const igrejaId = (uRes.data?.igreja_id as string | null) || null;
-        if (!igrejaId) return;
-
-        const iRes = await supabase.from("igrejas").select("nome").eq("id", igrejaId).single();
-        if (iRes.error) return;
-
-        const nome = (iRes.data?.nome as string | null) || null;
-        if (!active) return;
-
-        setTenantNome(nome);
-        if (nome) localStorage.setItem("ltz_tenant_nome", nome);
-      } catch {
-        // silencioso
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, [supabase]);
-
-  const isActive = (href: string) => {
+  const active = (href: string) => {
     if (href === "/") return pathname === "/";
     return pathname?.startsWith(href);
   };
-
-  async function logout() {
-    await supabase.auth.signOut();
-    router.replace("/login");
-  }
 
   return (
     <header
@@ -140,7 +90,16 @@ export default function AppHeader() {
         }}
       >
         {/* Brand */}
-        <a href="/" style={{ display: "flex", alignItems: "center", gap: 12, textDecoration: "none", minWidth: 0 }}>
+        <a
+          href="/"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 12,
+            textDecoration: "none",
+            minWidth: 0
+          }}
+        >
           <img
             src="/images/logo_oficial_church.png"
             alt="LTZ-CHURCH"
@@ -152,36 +111,46 @@ export default function AppHeader() {
             <div style={{ color: "#fff", fontWeight: 950, letterSpacing: 0.2, lineHeight: 1.1 }}>
               LTZ-CHURCH
             </div>
-            <div style={{ color: "rgba(255,255,255,.72)", fontWeight: 800, fontSize: 13, lineHeight: 1.2 }}>
-              {tenantNome ? tenantNome : "—"}
+            <div style={{ color: "rgba(255,255,255,.75)", fontWeight: 700, fontSize: 13, lineHeight: 1.2 }}>
+              Operacional
             </div>
           </div>
         </a>
 
         <span style={{ flex: 1 }} />
 
-        {/* Desktop nav */}
-        <div className="navDesktop" style={{ display: "none", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-          {NAV.map((item) => (
+        {/* Desktop nav (esconde em mobile via CSS inline simples) */}
+        <div
+          className="navDesktop"
+          style={{
+            display: "none",
+            gap: 14,
+            alignItems: "center",
+            flexWrap: "wrap"
+          }}
+        >
+          {NAV.filter((x) => !["/me", "/definicoes/aparencia"].includes(x.href)).map((item) => (
             <a
               key={item.href}
               href={item.href}
               className="navlink"
               style={{
                 textDecoration: "none",
-                opacity: isActive(item.href) ? 1 : 0.9,
-                fontWeight: isActive(item.href) ? 900 : 800,
-                borderBottom: isActive(item.href) ? "2px solid var(--accent)" : "2px solid transparent",
+                opacity: active(item.href) ? 1 : 0.9,
+                fontWeight: active(item.href) ? 900 : 800,
+                borderBottom: active(item.href) ? "2px solid var(--accent)" : "2px solid transparent",
                 paddingBottom: 6
               }}
             >
               {item.label}
             </a>
           ))}
-
-          <button onClick={logout} className="btn" style={{ padding: "8px 10px", borderRadius: 12 }}>
-            Sair
-          </button>
+          <a className="navlink" href="/definicoes/aparencia" style={{ textDecoration: "none", opacity: 0.9 }}>
+            Aparência
+          </a>
+          <a className="navlink" href="/me" style={{ textDecoration: "none", opacity: 0.9 }}>
+            Perfil
+          </a>
         </div>
 
         {/* Mobile hamburger */}
@@ -218,13 +187,25 @@ export default function AppHeader() {
         }}
       />
 
-      {/* Drawer (mobile) — versão “bulletproof” */}
+      {/* Drawer (mobile) */}
       {open ? (
-        <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 60 }}>
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 60
+          }}
+        >
           {/* backdrop */}
           <div
             onClick={() => setOpen(false)}
-            style={{ position: "absolute", inset: 0, background: "rgba(0,0,0,.55)" }}
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "rgba(0,0,0,.55)"
+            }}
           />
 
           {/* panel */}
@@ -240,50 +221,45 @@ export default function AppHeader() {
               borderLeft: "1px solid rgba(255,255,255,.10)",
               boxShadow: "0 18px 60px rgba(0,0,0,.6)",
               padding: 14,
-              display: "flex",
-              flexDirection: "column",
+              display: "grid",
+              gridTemplateRows: "auto 1fr auto",
               gap: 12
             }}
           >
-            {/* top */}
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
               <div style={{ fontWeight: 950, fontSize: 16 }}>Menu</div>
-              <button onClick={() => setOpen(false)} className="btn" style={{ padding: "8px 10px", borderRadius: 12 }}>
+              <button
+                onClick={() => setOpen(false)}
+                className="btn"
+                style={{ padding: "8px 10px", borderRadius: 12 }}
+              >
                 Fechar
               </button>
             </div>
 
-            {/* list (flex:1 garante que aparece sempre) */}
-            <div style={{ flex: 1, overflow: "auto", paddingRight: 2 }}>
-              <div style={{ display: "grid", gap: 10 }}>
-                {NAV.map((item) => (
-                  <a
-                    key={item.href}
-                    href={item.href}
-                    style={{
-                      textDecoration: "none",
-                      color: "#fff",
-                      padding: "12px 12px",
-                      borderRadius: 14,
-                      border: isActive(item.href)
-                        ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
-                        : "1px solid rgba(255,255,255,.10)",
-                      background: isActive(item.href)
-                        ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)"
-                        : "#0b0b0b",
-                      fontWeight: isActive(item.href) ? 950 : 850
-                    }}
-                  >
-                    {item.label}
-                  </a>
-                ))}
-              </div>
+            <div style={{ display: "grid", gap: 10 }}>
+              {NAV.map((item) => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  style={{
+                    textDecoration: "none",
+                    color: "#fff",
+                    padding: "12px 12px",
+                    borderRadius: 14,
+                    border: active(item.href) ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)" : "1px solid rgba(255,255,255,.10)",
+                    background: active(item.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "#0b0b0b",
+                    fontWeight: active(item.href) ? 950 : 850
+                  }}
+                >
+                  {item.label}
+                </a>
+              ))}
             </div>
 
-            {/* bottom */}
-            <button onClick={logout} className="btn btnAccent" style={{ width: "100%", borderRadius: 14 }}>
-              Sair
-            </button>
+            <div style={{ opacity: 0.8, fontSize: 12, lineHeight: 1.35 }}>
+              Dark fixo + cor de contraste (accent).
+            </div>
           </div>
         </div>
       ) : null}
