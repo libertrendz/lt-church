@@ -69,7 +69,7 @@ export default function HomePage() {
     return (
       <main style={{ padding: 6 }}>
         <h1 className="h-accent" style={{ marginTop: 4, marginBottom: 6 }}>
-          LTZ-CHURCH
+          LT-CHURCH
         </h1>
         <p style={{ opacity: 0.85 }}>Precisas de autenticação para aceder ao app.</p>
 
