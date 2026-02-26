@@ -2,7 +2,7 @@
 import AppHeader from "./components/AppHeader";
 
 export const metadata = {
-  title: "LTZ-CHURCH",
+  title: "LT-CHURCH",
   description: "Multi-tenant SaaS para igrejas",
   icons: {
     icon: [
