@@ -1,0 +1,110 @@
+/* PATH: app/globals.css */
+
+/* Dark mode fixo (regra dura) + tokens reutilizáveis */
+:root {
+  --bg: #070707;
+  --surface: #0b0b0b;
+  --card: rgba(255, 255, 255, 0.04);
+  --card-2: rgba(255, 255, 255, 0.06);
+  --border: rgba(255, 255, 255, 0.10);
+  --text: rgba(255, 255, 255, 0.94);
+  --muted: rgba(255, 255, 255, 0.72);
+
+  /* Accent (muda no settings) */
+  --accent: #d4af37; /* dourado default */
+  --accent-soft: color-mix(in srgb, var(--accent) 20%, transparent);
+  --accent-border: color-mix(in srgb, var(--accent) 55%, var(--border) 45%);
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial;
+}
+
+a {
+  color: var(--text);
+  text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  text-underline-offset: 4px;
+}
+
+a:hover { color: var(--text); }
+
+main { padding: 16px; }
+
+hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+}
+
+/* Componentes base (para não depender de “inline styles” em todo o lado) */
+.card {
+  background: radial-gradient(80% 140% at 0% 0%, var(--card-2), var(--card));
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  padding: 16px;
+  box-shadow: 0 18px 45px rgba(0,0,0,.45);
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.04);
+  color: var(--text);
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.btn:hover { border-color: rgba(255,255,255,0.18); }
+
+.btnAccent {
+  border-color: var(--accent-border);
+  background: color-mix(in srgb, var(--accent) 16%, rgba(255,255,255,0.04) 84%);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.03);
+  font-weight: 850;
+  color: var(--muted);
+}
+
+.badgeAccent {
+  border-color: var(--accent-border);
+  background: var(--accent-soft);
+  color: var(--text);
+}
+
+/* Inputs */
+input, select, textarea {
+  width: 100%;
+  padding: 12px 12px;
+  border-radius: 14px;
+  border: 1px solid var(--border);
+  background: rgba(255,255,255,0.03);
+  color: var(--text);
+  outline: none;
+}
+
+input::placeholder, textarea::placeholder { color: rgba(255,255,255,0.45); }
+
+input:focus, select:focus, textarea:focus {
+  border-color: var(--accent-border);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+/* Títulos */
+h1, h2, h3 { margin: 0 0 8px 0
