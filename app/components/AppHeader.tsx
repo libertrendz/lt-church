@@ -7,7 +7,7 @@ import { supabaseBrowser } from "../../lib/supabase/client";
 
 type NavItem = { href: string; label: string };
 
-const NAV: NavItem[] = [
+const NAV_ADMIN: NavItem[] = [
   { href: "/", label: "Início" },
   { href: "/cultos", label: "Cultos & Escalas" },
   { href: "/agenda", label: "Agenda" },
@@ -15,6 +15,14 @@ const NAV: NavItem[] = [
   { href: "/departamentos", label: "Departamentos" },
   { href: "/funcoes", label: "Funções" },
   { href: "/definicoes/aparencia", label: "Aparência" },
+  { href: "/me", label: "Perfil" }
+];
+
+// Nota: para não criar 404 agora, “Membro” aponta para rotas que já existem.
+const NAV_MEMBRO: NavItem[] = [
+  { href: "/", label: "Início" },
+  { href: "/agenda", label: "Minha Agenda" },
+  { href: "/cultos", label: "Minhas Escalas" },
   { href: "/me", label: "Perfil" }
 ];
 
@@ -39,9 +47,12 @@ function Hamburger({ open }: { open: boolean }) {
 export default function AppHeader() {
   const pathname = usePathname();
   const supabase = useMemo(() => supabaseBrowser(), []);
-
   const [open, setOpen] = useState(false);
+
+  // session-aware
   const [tenantNome, setTenantNome] = useState<string>("—");
+  const [role, setRole] = useState<"admin" | "membro">("membro"); // seguro por defeito
+  const [loaded, setLoaded] = useState(false);
 
   // não mostrar header no login
   if (pathname?.startsWith("/login")) return null;
@@ -60,7 +71,7 @@ export default function AppHeader() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // bloquear scroll quando menu aberto
+  // bloquear scroll quando drawer aberto
   useEffect(() => {
     if (!open) return;
     const prev = document.body.style.overflow;
@@ -70,61 +81,82 @@ export default function AppHeader() {
     };
   }, [open]);
 
-  // carregar nome da igreja (tenant) com cache local
+  // carregar role + tenantNome (usuarios -> igrejas)
   useEffect(() => {
-    let active = true;
+    let alive = true;
 
     (async () => {
       try {
-        const cached = localStorage.getItem("ltz_tenant_nome");
-        if (cached && active) setTenantNome(cached);
+        // cache “rápido”
+        const cachedNome = localStorage.getItem("ltz_tenant_nome");
+        const cachedRole = localStorage.getItem("ltz_role");
+
+        if (cachedNome && alive) setTenantNome(cachedNome);
+        if ((cachedRole === "admin" || cachedRole === "membro") && alive) setRole(cachedRole);
 
         const { data: sess } = await supabase.auth.getSession();
         const userId = sess.session?.user?.id;
+
         if (!userId) {
-          if (active) setTenantNome("—");
+          if (!alive) return;
+          setRole("membro");
+          setTenantNome("—");
+          setLoaded(true);
           return;
         }
 
-        const uRes = await supabase.from("usuarios").select("igreja_id").eq("id", userId).single();
-        if (uRes.error) return;
+        const uRes = await supabase
+          .from("usuarios")
+          .select("role, igreja_id")
+          .eq("id", userId)
+          .maybeSingle();
 
-        const igrejaId = (uRes.data?.igreja_id as string | null) || null;
-        if (!igrejaId) return;
+        if (uRes.error || !uRes.data) {
+          if (!alive) return;
+          setLoaded(true);
+          return;
+        }
 
-        const iRes = await supabase.from("igrejas").select("nome").eq("id", igrejaId).single();
-        if (iRes.error) return;
+        const r = (uRes.data.role as "admin" | "membro" | null) ?? "membro";
+        const igrejaId = (uRes.data.igreja_id as string | null) ?? null;
 
-        const nome = (iRes.data?.nome as string | null) || null;
-        if (!active) return;
+        if (!alive) return;
+        setRole(r);
+        localStorage.setItem("ltz_role", r);
 
-        const finalNome = nome || "—";
-        setTenantNome(finalNome);
-        if (nome) localStorage.setItem("ltz_tenant_nome", nome);
+        if (igrejaId) {
+          const iRes = await supabase.from("igrejas").select("nome").eq("id", igrejaId).maybeSingle();
+          const nome = (iRes.data?.nome as string | null) ?? null;
+          if (!alive) return;
+
+          if (nome) {
+            setTenantNome(nome);
+            localStorage.setItem("ltz_tenant_nome", nome);
+          } else {
+            setTenantNome("—");
+          }
+        } else {
+          setTenantNome("—");
+        }
+
+        setLoaded(true);
       } catch {
-        // silencioso
+        if (!alive) return;
+        setLoaded(true);
       }
     })();
 
     return () => {
-      active = false;
+      alive = false;
     };
   }, [supabase]);
 
-  const isActive = (href: string) => {
+  const NAV = role === "admin" ? NAV_ADMIN : NAV_MEMBRO;
+
+  const active = (href: string) => {
     if (href === "/") return pathname === "/";
     return pathname?.startsWith(href);
   };
-
-  async function logout() {
-    try {
-      await supabase.auth.signOut();
-    } catch {
-      // ignora
-    }
-    // hard redirect evita crash pós-logout
-    window.location.href = "/login";
-  }
 
   return (
     <header
@@ -169,8 +201,19 @@ export default function AppHeader() {
             <div style={{ color: "#fff", fontWeight: 950, letterSpacing: 0.2, lineHeight: 1.1 }}>
               LT-CHURCH
             </div>
-            <div style={{ color: "rgba(255,255,255,.75)", fontWeight: 900, fontSize: 13, lineHeight: 1.2 }}>
+            <div
+              style={{
+                color: "rgba(255,255,255,.80)",
+                fontWeight: 950,
+                fontSize: 15,
+                letterSpacing: 0.4,
+                lineHeight: 1.2
+              }}
+            >
               {tenantNome}
+              <span style={{ opacity: 0.55, fontWeight: 800, marginLeft: 8 }}>
+                {loaded ? (role === "admin" ? "Admin" : "Membro") : "…"}
+              </span>
             </div>
           </div>
         </a>
@@ -187,16 +230,16 @@ export default function AppHeader() {
             flexWrap: "wrap"
           }}
         >
-          {NAV.map((item) => (
+          {NAV.filter((x) => !["/me", "/definicoes/aparencia"].includes(x.href)).map((item) => (
             <a
               key={item.href}
               href={item.href}
               className="navlink"
               style={{
                 textDecoration: "none",
-                opacity: isActive(item.href) ? 1 : 0.9,
-                fontWeight: isActive(item.href) ? 900 : 800,
-                borderBottom: isActive(item.href) ? "2px solid var(--accent)" : "2px solid transparent",
+                opacity: active(item.href) ? 1 : 0.9,
+                fontWeight: active(item.href) ? 900 : 800,
+                borderBottom: active(item.href) ? "2px solid var(--accent)" : "2px solid transparent",
                 paddingBottom: 6
               }}
             >
@@ -204,9 +247,16 @@ export default function AppHeader() {
             </a>
           ))}
 
-          <button onClick={logout} className="btn" style={{ padding: "8px 10px", borderRadius: 12 }}>
-            Sair
-          </button>
+          {/* Só admin vê Aparência no desktop */}
+          {role === "admin" ? (
+            <a className="navlink" href="/definicoes/aparencia" style={{ textDecoration: "none", opacity: 0.9 }}>
+              Aparência
+            </a>
+          ) : null}
+
+          <a className="navlink" href="/me" style={{ textDecoration: "none", opacity: 0.9 }}>
+            Perfil
+          </a>
         </div>
 
         {/* Mobile hamburger */}
@@ -231,7 +281,7 @@ export default function AppHeader() {
         </button>
       </nav>
 
-      {/* CSS desktop vs mobile */}
+      {/* CSS simples para desktop vs mobile */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -243,7 +293,7 @@ export default function AppHeader() {
         }}
       />
 
-      {/* ✅ Drawer (mobile) OPACO, sem transparências */}
+      {/* Drawer (mobile) — mantém o teu estilo atual */}
       {open ? (
         <div
           role="dialog"
@@ -251,79 +301,74 @@ export default function AppHeader() {
           style={{
             position: "fixed",
             inset: 0,
-            zIndex: 9999,
-            background: "#050505" // ← opaco: elimina sobreposição com o fundo
+            zIndex: 60
           }}
         >
-          {/* topo */}
+          {/* backdrop */}
+          <div
+            onClick={() => setOpen(false)}
+            style={{
+              position: "absolute",
+              inset: 0,
+              background: "rgba(0,0,0,.55)"
+            }}
+          />
+
+          {/* panel */}
           <div
             style={{
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
-              gap: 12,
+              position: "absolute",
+              top: 0,
+              right: 0,
+              height: "100%",
+              width: "86%",
+              maxWidth: 360,
+              background: "rgba(8,8,8,.98)",
+              borderLeft: "1px solid rgba(255,255,255,.10)",
+              boxShadow: "0 18px 60px rgba(0,0,0,.6)",
               padding: 14,
-              borderBottom: "1px solid rgba(255,255,255,.08)"
+              display: "grid",
+              gridTemplateRows: "auto 1fr auto",
+              gap: 12
             }}
           >
-            <div style={{ fontWeight: 950, fontSize: 16 }}>Menu</div>
-            <button
-              onClick={() => setOpen(false)}
-              className="btn"
-              style={{ padding: "8px 10px", borderRadius: 12 }}
-            >
-              Fechar
-            </button>
-          </div>
-
-          {/* conteúdo */}
-          <div style={{ padding: 14 }}>
-            <div
-              style={{
-                border: "1px solid rgba(255,255,255,.10)",
-                borderRadius: 18,
-                background: "#0b0b0b",
-                boxShadow: "0 18px 60px rgba(0,0,0,.55)",
-                padding: 12
-              }}
-            >
-              <div style={{ display: "grid", gap: 10 }}>
-                {NAV.map((item) => (
-                  <a
-                    key={item.href}
-                    href={item.href}
-                    style={{
-                      textDecoration: "none",
-                      color: "#fff",
-                      padding: "14px 12px",
-                      borderRadius: 14,
-                      border: isActive(item.href)
-                        ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
-                        : "1px solid rgba(255,255,255,.10)",
-                      background: isActive(item.href)
-                        ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)"
-                        : "#101010",
-                      fontWeight: isActive(item.href) ? 950 : 850
-                    }}
-                  >
-                    {item.label}
-                  </a>
-                ))}
-              </div>
-
-              <div style={{ height: 12 }} />
-
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <div style={{ fontWeight: 950, fontSize: 16 }}>Menu</div>
               <button
-                onClick={logout}
-                className="btn btnAccent"
-                style={{ width: "100%", borderRadius: 14, padding: "12px 14px" }}
+                onClick={() => setOpen(false)}
+                className="btn"
+                style={{ padding: "8px 10px", borderRadius: 12 }}
               >
-                Sair
+                Fechar
               </button>
+            </div>
 
-              <div style={{ marginTop: 10, opacity: 0.7, fontSize: 12, lineHeight: 1.35 }}>
-                Dark fixo + cor de contraste (accent).
-              </div>
+            <div style={{ display: "grid", gap: 10 }}>
+              {NAV.map((item) => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  style={{
+                    textDecoration: "none",
+                    color: "#fff",
+                    padding: "12px 12px",
+                    borderRadius: 14,
+                    border: active(item.href)
+                      ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
+                      : "1px solid rgba(255,255,255,.10)",
+                    background: active(item.href)
+                      ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)"
+                      : "#0b0b0b",
+                    fontWeight: active(item.href) ? 950 : 850
+                  }}
+                >
+                  {item.label}
+                </a>
+              ))}
+            </div>
+
+            <div style={{ opacity: 0.8, fontSize: 12, lineHeight: 1.35 }}>
+              {role === "admin" ? "Modo Admin" : "Modo Membro"}
             </div>
           </div>
         </div>
