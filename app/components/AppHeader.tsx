@@ -7,26 +7,24 @@ import { supabaseBrowser } from "../../lib/supabase/client";
 
 const APP_NAME = "LT-CHURCH";
 
-type Role = "admin" | "membro";
 type NavItem = { href: string; label: string };
 
-const NAV_OPERACIONAL_ADMIN: NavItem[] = [
+const NAV_ADMIN: NavItem[] = [
   { href: "/", label: "Início" },
   { href: "/cultos", label: "Cultos & Escalas" },
   { href: "/agenda", label: "Agenda" },
   { href: "/membros", label: "Membros" },
   { href: "/departamentos", label: "Departamentos" },
-  { href: "/funcoes", label: "Funções" }
+  { href: "/funcoes", label: "Funções" },
+  { href: "/definicoes/aparencia", label: "Aparência" },
+  { href: "/me", label: "Perfil" }
 ];
 
-const NAV_OPERACIONAL_MEMBRO: NavItem[] = [
+// Nota: para não criar 404 agora, “Membro” aponta para rotas que já existem.
+const NAV_MEMBRO: NavItem[] = [
   { href: "/", label: "Início" },
   { href: "/agenda", label: "Minha Agenda" },
-  { href: "/cultos", label: "Minhas Escalas" }
-];
-
-const NAV_CONTA: NavItem[] = [
-  { href: "/definicoes/aparencia", label: "Aparência" },
+  { href: "/cultos", label: "Minhas Escalas" },
   { href: "/me", label: "Perfil" }
 ];
 
@@ -48,70 +46,55 @@ function Hamburger({ open }: { open: boolean }) {
   );
 }
 
-function SectionTitle({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ marginTop: 10, marginBottom: 8, fontSize: 12, letterSpacing: 1, opacity: 0.65, fontWeight: 950 }}>
-      {children}
-    </div>
-  );
-}
-
 export default function AppHeader() {
   const pathname = usePathname();
   const supabase = useMemo(() => supabaseBrowser(), []);
+  const [open, setOpen] = useState(false);
 
-  const [openMobile, setOpenMobile] = useState(false);
-  const [openConta, setOpenConta] = useState(false);
-
+  // session-aware
   const [tenantNome, setTenantNome] = useState<string>("—");
-  const [role, setRole] = useState<Role>("membro");
+  const [role, setRole] = useState<"admin" | "membro">("membro"); // seguro por defeito
   const [loaded, setLoaded] = useState(false);
 
+  // não mostrar header no login
   if (pathname?.startsWith("/login")) return null;
 
-  const NAV_OPERACIONAL = role === "admin" ? NAV_OPERACIONAL_ADMIN : NAV_OPERACIONAL_MEMBRO;
-
-  const isActive = (href: string) => {
-    if (href === "/") return pathname === "/";
-    return pathname?.startsWith(href);
-  };
-
+  // fecha ao navegar
   useEffect(() => {
-    setOpenMobile(false);
-    setOpenConta(false);
+    setOpen(false);
   }, [pathname]);
 
+  // ESC fecha
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === "Escape") {
-        setOpenMobile(false);
-        setOpenConta(false);
-      }
+      if (e.key === "Escape") setOpen(false);
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
+  // bloquear scroll quando drawer aberto
   useEffect(() => {
-    if (!openMobile) return;
+    if (!open) return;
     const prev = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
       document.body.style.overflow = prev;
     };
-  }, [openMobile]);
+  }, [open]);
 
+  // carregar role + tenantNome (usuarios -> igrejas)
   useEffect(() => {
     let alive = true;
 
     (async () => {
       try {
-        try {
-          const cachedNome = localStorage.getItem("ltz_tenant_nome");
-          const cachedRole = localStorage.getItem("ltz_role");
-          if (cachedNome && alive) setTenantNome(cachedNome);
-          if ((cachedRole === "admin" || cachedRole === "membro") && alive) setRole(cachedRole as Role);
-        } catch {}
+        // cache “rápido”
+        const cachedNome = localStorage.getItem("ltz_tenant_nome");
+        const cachedRole = localStorage.getItem("ltz_role");
+
+        if (cachedNome && alive) setTenantNome(cachedNome);
+        if ((cachedRole === "admin" || cachedRole === "membro") && alive) setRole(cachedRole);
 
         const { data: sess } = await supabase.auth.getSession();
         const userId = sess.session?.user?.id;
@@ -124,28 +107,34 @@ export default function AppHeader() {
           return;
         }
 
-        const uRes = await supabase.from("usuarios").select("role, igreja_id").eq("id", userId).maybeSingle();
+        const uRes = await supabase
+          .from("usuarios")
+          .select("role, igreja_id")
+          .eq("id", userId)
+          .maybeSingle();
+
+        if (uRes.error || !uRes.data) {
+          if (!alive) return;
+          setLoaded(true);
+          return;
+        }
+
+        const r = (uRes.data.role as "admin" | "membro" | null) ?? "membro";
+        const igrejaId = (uRes.data.igreja_id as string | null) ?? null;
+
         if (!alive) return;
 
-        const r = (uRes.data?.role as Role | null) ?? "membro";
-        const igrejaId = (uRes.data?.igreja_id as string | null) ?? null;
-
         setRole(r);
-        try {
-          localStorage.setItem("ltz_role", r);
-        } catch {}
+        localStorage.setItem("ltz_role", r);
 
         if (igrejaId) {
           const iRes = await supabase.from("igrejas").select("nome").eq("id", igrejaId).maybeSingle();
           const nome = (iRes.data?.nome as string | null) ?? null;
-
           if (!alive) return;
 
           if (nome) {
             setTenantNome(nome);
-            try {
-              localStorage.setItem("ltz_tenant_nome", nome);
-            } catch {}
+            localStorage.setItem("ltz_tenant_nome", nome);
           } else {
             setTenantNome("—");
           }
@@ -165,18 +154,18 @@ export default function AppHeader() {
     };
   }, [supabase]);
 
+  const NAV = role === "admin" ? NAV_ADMIN : NAV_MEMBRO;
+
+  const active = (href: string) => {
+    if (href === "/") return pathname === "/";
+    return pathname?.startsWith(href);
+  };
+
   async function logout() {
     try {
-      setOpenMobile(false);
-      setOpenConta(false);
-
-      try {
-        localStorage.removeItem("ltz_role");
-        localStorage.removeItem("ltz_tenant_nome");
-      } catch {}
-
       await supabase.auth.signOut();
     } finally {
+      // hard redirect evita “client-side exception”
       window.location.assign("/login");
     }
   }
@@ -202,6 +191,7 @@ export default function AppHeader() {
           gap: 12
         }}
       >
+        {/* Brand */}
         <a
           href="/"
           style={{
@@ -212,29 +202,56 @@ export default function AppHeader() {
             minWidth: 0
           }}
         >
-          <img src="/images/logo_oficial_church.png" alt={APP_NAME} width={64} height={64} style={{ borderRadius: 14, display: "block" }} />
+          <img
+            src="/images/logo_oficial_church.png"
+            alt={APP_NAME}
+            width={64}
+            height={64}
+            style={{ borderRadius: 14, display: "block" }}
+          />
           <div style={{ minWidth: 0 }}>
-            <div style={{ color: "#fff", fontWeight: 950, letterSpacing: 0.2, lineHeight: 1.1 }}>{APP_NAME}</div>
-            <div style={{ color: "rgba(255,255,255,.80)", fontWeight: 850, fontSize: 13, lineHeight: 1.2 }}>
-              {tenantNome}{" "}
-              <span style={{ opacity: 0.55, fontWeight: 800 }}>{loaded ? (role === "admin" ? "• Admin" : "• Membro") : "• …"}</span>
+            <div style={{ color: "#fff", fontWeight: 950, letterSpacing: 0.2, lineHeight: 1.1 }}>
+              {APP_NAME}
+            </div>
+            <div
+              style={{
+                color: "rgba(255,255,255,.80)",
+                fontWeight: 950,
+                fontSize: 15,
+                letterSpacing: 0.4,
+                lineHeight: 1.2
+              }}
+            >
+              {tenantNome}
+              <span style={{ opacity: 0.55, fontWeight: 800, marginLeft: 8 }}>
+                {loaded ? (role === "admin" ? "Admin" : "Membro") : "…"}
+              </span>
             </div>
           </div>
         </a>
 
         <span style={{ flex: 1 }} />
 
-        <div className="navDesktop" style={{ display: "none", gap: 14, alignItems: "center", flexWrap: "wrap" }}>
-          {NAV_OPERACIONAL.map((item) => (
+        {/* Desktop nav */}
+        <div
+          className="navDesktop"
+          style={{
+            display: "none",
+            gap: 14,
+            alignItems: "center",
+            flexWrap: "wrap"
+          }}
+        >
+          {NAV.filter((x) => !["/me", "/definicoes/aparencia"].includes(x.href)).map((item) => (
             <a
               key={item.href}
               href={item.href}
               className="navlink"
               style={{
                 textDecoration: "none",
-                opacity: isActive(item.href) ? 1 : 0.9,
-                fontWeight: isActive(item.href) ? 900 : 800,
-                borderBottom: isActive(item.href) ? "2px solid var(--accent)" : "2px solid transparent",
+                opacity: active(item.href) ? 1 : 0.9,
+                fontWeight: active(item.href) ? 900 : 800,
+                borderBottom: active(item.href) ? "2px solid var(--accent)" : "2px solid transparent",
                 paddingBottom: 6
               }}
             >
@@ -242,58 +259,23 @@ export default function AppHeader() {
             </a>
           ))}
 
-          <div style={{ position: "relative" }}>
-            <button className="btn" onClick={() => setOpenConta((v) => !v)} aria-label="Conta" style={{ padding: "9px 12px", borderRadius: 14 }}>
-              Conta ▾
-            </button>
+          {/* No desktop: Aparência só para admin */}
+          {role === "admin" ? (
+            <a className="navlink" href="/definicoes/aparencia" style={{ textDecoration: "none", opacity: 0.9 }}>
+              Aparência
+            </a>
+          ) : null}
 
-            {openConta ? (
-              <div
-                style={{
-                  position: "absolute",
-                  right: 0,
-                  top: "calc(100% + 10px)",
-                  width: 230,
-                  borderRadius: 16,
-                  border: "1px solid rgba(255,255,255,.12)",
-                  background: "rgba(10,10,10,.98)",
-                  boxShadow: "0 18px 60px rgba(0,0,0,.6)",
-                  padding: 10,
-                  zIndex: 70
-                }}
-              >
-                {NAV_CONTA.map((x) => (
-                  <a
-                    key={x.href}
-                    href={x.href}
-                    style={{
-                      display: "block",
-                      padding: "10px 12px",
-                      borderRadius: 12,
-                      textDecoration: "none",
-                      color: "#fff",
-                      fontWeight: 850,
-                      background: isActive(x.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "transparent",
-                      border: isActive(x.href) ? "1px solid rgba(255,255,255,.12)" : "1px solid transparent"
-                    }}
-                  >
-                    {x.label}
-                  </a>
-                ))}
-
-                <div style={{ height: 10 }} />
-                <button className="btn btnAccent" onClick={logout} style={{ width: "100%" }}>
-                  Sair
-                </button>
-              </div>
-            ) : null}
-          </div>
+          <a className="navlink" href="/me" style={{ textDecoration: "none", opacity: 0.9 }}>
+            Perfil
+          </a>
         </div>
 
+        {/* Mobile hamburger */}
         <button
           className="navMobileBtn"
-          onClick={() => setOpenMobile((v) => !v)}
-          aria-label={openMobile ? "Fechar menu" : "Abrir menu"}
+          onClick={() => setOpen((v) => !v)}
+          aria-label={open ? "Fechar menu" : "Abrir menu"}
           style={{
             display: "inline-flex",
             alignItems: "center",
@@ -307,10 +289,11 @@ export default function AppHeader() {
             cursor: "pointer"
           }}
         >
-          <Hamburger open={openMobile} />
+          <Hamburger open={open} />
         </button>
       </nav>
 
+      {/* CSS simples para desktop vs mobile */}
       <style
         dangerouslySetInnerHTML={{
           __html: `
@@ -322,103 +305,91 @@ export default function AppHeader() {
         }}
       />
 
-      {/* ✅ OVERLAY OPACO + PAINEL SÓLIDO (A HOME NÃO APARECE) */}
-      {openMobile ? (
-        <div role="dialog" aria-modal="true" style={{ position: "fixed", inset: 0, zIndex: 999 }}>
-          {/* overlay realmente opaco */}
+      {/* MOBILE DRAWER — corrigido: overlay opaco + painel sólido + lista não colapsa */}
+      {open ? (
+        <div
+          role="dialog"
+          aria-modal="true"
+          style={{
+            position: "fixed",
+            inset: 0,
+            zIndex: 60
+          }}
+        >
+          {/* ✅ overlay opaco para NÃO ver a home atrás */}
           <div
-            onClick={() => setOpenMobile(false)}
+            onClick={() => setOpen(false)}
             style={{
               position: "absolute",
               inset: 0,
-              background: "rgba(0,0,0,.92)" // ✅ “mata” o conteúdo atrás
+              background: "rgba(0,0,0,.90)" // <- aqui é o “protetor”
             }}
           />
 
-          {/* painel sólido em cima do overlay */}
+          {/* ✅ painel sólido (não transparente) */}
           <div
             style={{
               position: "absolute",
-              inset: 0,
+              top: 0,
+              right: 0,
+              height: "100%",
+              width: "86%",
+              maxWidth: 360,
               background: "#050505",
+              borderLeft: "1px solid rgba(255,255,255,.10)",
+              boxShadow: "0 18px 60px rgba(0,0,0,.6)",
+              padding: 14,
               display: "flex",
-              flexDirection: "column"
+              flexDirection: "column",
+              gap: 12
             }}
           >
-            <div
-              style={{
-                padding: 14,
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "space-between",
-                gap: 12,
-                borderBottom: "1px solid rgba(255,255,255,.08)"
-              }}
-            >
-              <div style={{ fontWeight: 950, fontSize: 18 }}>Menu</div>
-              <button onClick={() => setOpenMobile(false)} className="btn" style={{ padding: "8px 10px", borderRadius: 12 }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+              <div style={{ fontWeight: 950, fontSize: 16 }}>Menu</div>
+              <button
+                onClick={() => setOpen(false)}
+                className="btn"
+                style={{ padding: "8px 10px", borderRadius: 12 }}
+              >
                 Fechar
               </button>
             </div>
 
-            <div style={{ flex: 1, minHeight: 0, overflow: "auto", padding: 14 }}>
-              <SectionTitle>OPERACIONAL</SectionTitle>
-              <div style={{ display: "grid", gap: 10 }}>
-                {NAV_OPERACIONAL.map((item) => (
-                  <a
-                    key={item.href}
-                    href={item.href}
-                    style={{
-                      textDecoration: "none",
-                      color: "#fff",
-                      padding: "14px 14px",
-                      borderRadius: 16,
-                      border: isActive(item.href)
-                        ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
-                        : "1px solid rgba(255,255,255,.10)",
-                      background: isActive(item.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "#101010",
-                      fontWeight: isActive(item.href) ? 950 : 850
-                    }}
-                  >
-                    {item.label}
-                  </a>
-                ))}
-              </div>
-
-              <div style={{ height: 14 }} />
-
-              <SectionTitle>CONTA</SectionTitle>
-              <div style={{ display: "grid", gap: 10 }}>
-                {NAV_CONTA.map((item) => (
-                  <a
-                    key={item.href}
-                    href={item.href}
-                    style={{
-                      textDecoration: "none",
-                      color: "#fff",
-                      padding: "14px 14px",
-                      borderRadius: 16,
-                      border: isActive(item.href)
-                        ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
-                        : "1px solid rgba(255,255,255,.10)",
-                      background: isActive(item.href) ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)" : "#101010",
-                      fontWeight: isActive(item.href) ? 950 : 850
-                    }}
-                  >
-                    {item.label}
-                  </a>
-                ))}
-              </div>
+            {/* ✅ scroll aqui para nunca “sumir” itens */}
+            <div style={{ display: "grid", gap: 10, overflow: "auto", minHeight: 0, flex: 1 }}>
+              {NAV.map((item) => (
+                <a
+                  key={item.href}
+                  href={item.href}
+                  style={{
+                    textDecoration: "none",
+                    color: "#fff",
+                    padding: "12px 12px",
+                    borderRadius: 14,
+                    border: active(item.href)
+                      ? "1px solid color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,.14) 45%)"
+                      : "1px solid rgba(255,255,255,.10)",
+                    background: active(item.href)
+                      ? "color-mix(in srgb, var(--accent) 12%, #0b0b0b 88%)"
+                      : "#0b0b0b",
+                    fontWeight: active(item.href) ? 950 : 850
+                  }}
+                >
+                  {item.label}
+                </a>
+              ))}
             </div>
 
-            <div style={{ padding: 14, borderTop: "1px solid rgba(255,255,255,.08)" }}>
-              <button onClick={logout} className="btn btnAccent" style={{ width: "100%", borderRadius: 14, padding: "12px 14px" }}>
-                Sair
-              </button>
+            <button
+              onClick={logout}
+              className="btn btnAccent"
+              style={{ width: "100%", borderRadius: 14, padding: "12px 14px" }}
+            >
+              Sair
+            </button>
 
-              <div style={{ marginTop: 10, opacity: 0.7, fontSize: 12, lineHeight: 1.35 }}>
-                {tenantNome} • {loaded ? (role === "admin" ? "Admin" : "Membro") : "…"}
-              </div>
+            <div style={{ opacity: 0.8, fontSize: 12, lineHeight: 1.35 }}>
+              {role === "admin" ? "Modo Admin" : "Modo Membro"}
             </div>
           </div>
         </div>
