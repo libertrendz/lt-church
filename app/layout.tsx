@@ -28,24 +28,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           color: "#fff"
         }}
       >
-        {/* aplica accent cedo (localStorage) */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-(function(){
-  try {
-    var v = localStorage.getItem("ltz_accent");
-    if (v) document.documentElement.style.setProperty("--accent", v);
-  } catch(e) {}
-})();`
-          }}
-        />
-
         <style
           dangerouslySetInnerHTML={{
             __html: `
 :root{
-  --accent: #D4AF37;
+  --accent: #D4AF37; /* default (tenant) */
   --bg: #050505;
   --card: #0b0b0b;
   --card2:#070707;
