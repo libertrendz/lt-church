@@ -4,7 +4,7 @@ import type { MetadataRoute } from "next";
 export default function manifest(): MetadataRoute.Manifest {
   return {
     name: "LT-CHURCH",
-    short_name: "LTZ",
+    short_name: "LT",
     description: "Multi-tenant SaaS para igrejas",
     start_url: "/",
     scope: "/",
