@@ -1,4 +1,4 @@
-# LTZ-CHURCH
+# LT-CHURCH
 
 Sistema multi-tenant para gestão organizacional de igrejas.
 
@@ -11,7 +11,7 @@ Projeto construído com:
 
 # 🎯 Objetivo
 
-LTZ-CHURCH é um sistema estruturado para:
+LT-CHURCH é um sistema estruturado para:
 
 - Gestão de igrejas (multi-tenant)
 - Membros
