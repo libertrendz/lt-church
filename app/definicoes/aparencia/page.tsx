@@ -16,6 +16,12 @@ const OPTIONS: Option[] = [
   { key: "rosegold", nome: "Rose Gold", hex: "#B76E79" }
 ];
 
+function findByHex(hex: string | null | undefined): Option | null {
+  if (!hex) return null;
+  const h = hex.toLowerCase();
+  return OPTIONS.find((o) => o.hex.toLowerCase() === h) ?? null;
+}
+
 export default function AparenciaPage() {
   const router = useRouter();
   const supabase = useMemo(() => supabaseBrowser(), []);
@@ -23,11 +29,17 @@ export default function AparenciaPage() {
   const [ready, setReady] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+
+  const [igrejaId, setIgrejaId] = useState<string | null>(null);
   const [selected, setSelected] = useState<Option>(OPTIONS[0]);
 
   useEffect(() => {
     let active = true;
+
     (async () => {
+      setErr(null);
+      setOk(null);
+
       const { data } = await supabase.auth.getSession();
       if (!active) return;
 
@@ -37,12 +49,51 @@ export default function AparenciaPage() {
       }
 
       try {
-        const v = localStorage.getItem("ltz_accent");
-        const found = OPTIONS.find((o) => o.hex.toLowerCase() === (v || "").toLowerCase());
-        if (found) setSelected(found);
-      } catch {}
+        const userId = data.session.user.id;
 
-      setReady(true);
+        // 1) validar role (só admin)
+        const uRes = await supabase
+          .from("usuarios")
+          .select("role, igreja_id")
+          .eq("id", userId)
+          .single();
+
+        if (uRes.error) throw uRes.error;
+
+        const role = (uRes.data?.role as string | null) ?? "membro";
+        const igId = (uRes.data?.igreja_id as string | null) ?? null;
+
+        if (!igId) throw new Error("Sem igreja_id no utilizador.");
+
+        if (role !== "admin") {
+          // só admin define aparência
+          router.replace("/");
+          return;
+        }
+
+        if (!active) return;
+        setIgrejaId(igId);
+
+        // 2) carregar cor do tenant (igrejas.cor_primaria)
+        const iRes = await supabase.from("igrejas").select("cor_primaria").eq("id", igId).single();
+        if (iRes.error) throw iRes.error;
+
+        const cor = (iRes.data?.cor_primaria as string | null) ?? null;
+
+        const opt = findByHex(cor) ?? OPTIONS[0];
+        if (!active) return;
+
+        setSelected(opt);
+
+        // aplica logo no DOM (fonte de verdade = BD)
+        if (cor) document.documentElement.style.setProperty("--accent", cor);
+      } catch (e: any) {
+        if (!active) return;
+        setErr(e?.message ? String(e.message) : "Erro ao carregar.");
+      } finally {
+        if (!active) return;
+        setReady(true);
+      }
     })();
 
     return () => {
@@ -55,32 +106,16 @@ export default function AparenciaPage() {
     setOk(null);
 
     try {
-      localStorage.setItem("ltz_accent", selected.hex);
-      document.documentElement.style.setProperty("--accent", selected.hex);
-    } catch {}
-
-    // tentar persistir no tenant (se RLS permitir)
-    try {
-      const { data: sess } = await supabase.auth.getSession();
-      const userId = sess.session?.user?.id;
-      if (!userId) throw new Error("Sem sessão.");
-
-      const uRes = await supabase.from("usuarios").select("igreja_id").eq("id", userId).single();
-      if (uRes.error) throw uRes.error;
-
-      const igrejaId = uRes.data?.igreja_id as string | null;
-      if (!igrejaId) throw new Error("Sem igreja_id no utilizador.");
-
+      if (!igrejaId) throw new Error("Sem igreja_id.");
       const up = await supabase.from("igrejas").update({ cor_primaria: selected.hex }).eq("id", igrejaId);
-      if (up.error) {
-        setOk("Guardado.");
-        return;
-      }
+      if (up.error) throw up.error;
+
+      // aplica imediatamente em todas as páginas (via CSS var global)
+      document.documentElement.style.setProperty("--accent", selected.hex);
 
       setOk("Guardado.");
     } catch (e: any) {
-      setOk("Guardado.");
-      setErr(e?.message ? `Nota: ${e.message}` : null);
+      setErr(e?.message ? String(e.message) : "Erro ao guardar.");
     }
   }
 
@@ -89,7 +124,7 @@ export default function AparenciaPage() {
   return (
     <main style={{ padding: 6 }}>
       <h1 style={{ marginTop: 4, marginBottom: 6 }}>Aparência</h1>
-      <p style={{ opacity: 0.85, marginTop: 0 }}>Escolhe a cor de contraste.</p>
+      <p style={{ opacity: 0.85, marginTop: 0 }}>Definir a cor de contraste (para toda a igreja).</p>
 
       {err ? <p style={{ color: "#ff6b6b", whiteSpace: "pre-wrap" }}>{err}</p> : null}
       {ok ? <p style={{ color: "#7CFF7C" }}>{ok}</p> : null}
@@ -134,7 +169,6 @@ export default function AparenciaPage() {
         </div>
 
         <div style={{ marginTop: 12, display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center" }}>
-          {/* ✅ agora é legível */}
           <button onClick={guardar} className="btn btnAccent" style={{ borderRadius: 12 }}>
             Guardar
           </button>
