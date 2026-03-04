@@ -1,4 +1,4 @@
-# LTZ-CHURCH — DECISÕES FECHADAS
+# LT-CHURCH — DECISÕES FECHADAS
 
 Versão: v1.0  
 Status: BLOQUEADAS (não reabrir sem motivo crítico)
@@ -7,7 +7,7 @@ Status: BLOQUEADAS (não reabrir sem motivo crítico)
 
 ## 1. Natureza do Produto
 
-LTZ-CHURCH é um produto SaaS multi-tenant para igrejas.
+LT-CHURCH é um produto SaaS multi-tenant para igrejas.
 
 ADMVC é apenas o primeiro cliente (tenant).
 
@@ -24,7 +24,7 @@ O produto deve ser vendável para múltiplas igrejas sem reescrita estrutural.
 
 Tenant strategy (Fase 1):
 → URL baseada em slug:
-`app.ltz-church.app/<slug>/...`
+`app.lt-church.app/<slug>/...`
 
 Subdomínios poderão ser considerados futuramente.
 
