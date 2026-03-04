@@ -1,4 +1,4 @@
-TZ-CHURCH — ESTADO OFICIAL FASE 1
+LT-CHURCH — ESTADO OFICIAL FASE 1
 Arquitectura Validada
 Multi-tenant
 
