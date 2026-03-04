@@ -2,7 +2,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "../lib/supabase/client";
 
 type Role = "admin" | "membro";
@@ -11,68 +10,22 @@ type Card = {
   title: string;
   desc: string;
   href: string;
-  audience: Role[]; // quem vê
+  audience: Role[];
 };
 
 const CARDS: Card[] = [
-  {
-    title: "Cultos & Escalas",
-    desc: "Ver próximos cultos e gerir equipas por função.",
-    href: "/cultos",
-    audience: ["admin"]
-  },
-  {
-    title: "Minhas Escalas",
-    desc: "Ver onde estás convocado e confirmar presença.",
-    href: "/cultos",
-    audience: ["membro"]
-  },
-  {
-    title: "Agenda",
-    desc: "Criar e consultar eventos (avulsos e recorrentes).",
-    href: "/agenda",
-    audience: ["admin"]
-  },
-  {
-    title: "Minha Agenda",
-    desc: "Ver os teus compromissos e avisos.",
-    href: "/agenda",
-    audience: ["membro"]
-  },
-  {
-    title: "Membros",
-    desc: "Gerir membros e (mais tarde) cadastro completo.",
-    href: "/membros",
-    audience: ["admin"]
-  },
-  {
-    title: "Departamentos",
-    desc: "Gerir departamentos e associações.",
-    href: "/departamentos",
-    audience: ["admin"]
-  },
-  {
-    title: "Funções",
-    desc: "Gerir funções e inativar quando necessário.",
-    href: "/funcoes",
-    audience: ["admin"]
-  },
-  {
-    title: "Perfil",
-    desc: "Os teus dados e preferências.",
-    href: "/me",
-    audience: ["admin", "membro"]
-  },
-  {
-    title: "Aparência",
-    desc: "Escolher a cor de contraste (accent).",
-    href: "/definicoes/aparencia",
-    audience: ["admin", "membro"]
-  }
+  { title: "Cultos & Escalas", desc: "Ver próximos cultos e gerir equipas por função.", href: "/cultos", audience: ["admin"] },
+  { title: "Minhas Escalas", desc: "Ver onde estás convocado e confirmar presença.", href: "/cultos", audience: ["membro"] },
+  { title: "Agenda", desc: "Criar e consultar eventos (avulsos e recorrentes).", href: "/agenda", audience: ["admin"] },
+  { title: "Minha Agenda", desc: "Ver os teus compromissos e avisos.", href: "/agenda", audience: ["membro"] },
+  { title: "Membros", desc: "Gerir membros e (mais tarde) cadastro completo.", href: "/membros", audience: ["admin"] },
+  { title: "Departamentos", desc: "Gerir departamentos e associações.", href: "/departamentos", audience: ["admin"] },
+  { title: "Funções", desc: "Gerir funções e inativar quando necessário.", href: "/funcoes", audience: ["admin"] },
+  { title: "Perfil", desc: "Os teus dados e preferências.", href: "/me", audience: ["admin", "membro"] },
+  { title: "Aparência", desc: "Escolher a cor de contraste (accent).", href: "/definicoes/aparencia", audience: ["admin", "membro"] }
 ];
 
 export default function HomePage() {
-  const router = useRouter();
   const supabase = useMemo(() => supabaseBrowser(), []);
   const [ready, setReady] = useState(false);
   const [isAuthed, setIsAuthed] = useState(false);
@@ -101,7 +54,6 @@ export default function HomePage() {
         return;
       }
 
-      // carrega role + tenant (mesma lógica do header, mas leve)
       try {
         const userId = data.session?.user?.id;
         if (!userId) {
@@ -124,7 +76,7 @@ export default function HomePage() {
           setTenantNome("—");
         }
       } catch {
-        // ignora: home não pode crashar
+        // home não pode crashar
       }
 
       setReady(true);
@@ -161,7 +113,6 @@ export default function HomePage() {
 
   return (
     <main style={{ padding: 10 }}>
-      {/* título humano, sem “Operacional” fixo */}
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
         <div>
           <h1 className="h-accent" style={{ margin: 0 }}>
@@ -206,8 +157,6 @@ export default function HomePage() {
           </a>
         ))}
       </div>
-
-      {/* Nota: links técnicos ficam fora daqui (como pediste) */}
     </main>
   );
 }
