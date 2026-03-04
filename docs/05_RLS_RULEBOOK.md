@@ -1,4 +1,4 @@
-# LTZ-CHURCH — RLS RULEBOOK
+# LT-CHURCH — RLS RULEBOOK
 
 Este documento define as regras obrigatórias de Row Level Security.
 
