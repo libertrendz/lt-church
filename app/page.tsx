@@ -27,11 +27,15 @@ const CARDS: Card[] = [
 
 export default function HomePage() {
   const supabase = useMemo(() => supabaseBrowser(), []);
+
   const [ready, setReady] = useState(false);
   const [isAuthed, setIsAuthed] = useState(false);
 
   const [role, setRole] = useState<Role>("membro");
   const [tenantNome, setTenantNome] = useState<string>("—");
+
+  // ✅ novo estado
+  const [nome, setNome] = useState<string>("—");
 
   useEffect(() => {
     let active = true;
@@ -61,16 +65,32 @@ export default function HomePage() {
           return;
         }
 
-        const uRes = await supabase.from("usuarios").select("role, igreja_id").eq("id", userId).maybeSingle();
+        const uRes = await supabase
+          .from("usuarios")
+          .select("role, igreja_id, nome") // ✅ nome adicionado
+          .eq("id", userId)
+          .maybeSingle();
+
         if (!active) return;
 
         const r = (uRes.data?.role as Role | null) ?? "membro";
         setRole(r);
 
+        // ✅ guardar nome
+        const nomeUser = (uRes.data?.nome as string | null) ?? null;
+        if (nomeUser) setNome(nomeUser);
+
         const igrejaId = (uRes.data?.igreja_id as string | null) ?? null;
+
         if (igrejaId) {
-          const iRes = await supabase.from("igrejas").select("nome").eq("id", igrejaId).maybeSingle();
+          const iRes = await supabase
+            .from("igrejas")
+            .select("nome")
+            .eq("id", igrejaId)
+            .maybeSingle();
+
           if (!active) return;
+
           setTenantNome((iRes.data?.nome as string | null) ?? "—");
         } else {
           setTenantNome("—");
@@ -113,13 +133,28 @@ export default function HomePage() {
 
   return (
     <main style={{ padding: 10 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 14, flexWrap: "wrap" }}>
+      <div
+        style={{
+          display: "flex",
+          alignItems: "baseline",
+          justifyContent: "space-between",
+          gap: 14,
+          flexWrap: "wrap"
+        }}
+      >
         <div>
           <h1 className="h-accent" style={{ margin: 0 }}>
             Início
           </h1>
+
+          {/* ✅ linha nova */}
           <div style={{ marginTop: 6, color: "var(--textDim)", fontWeight: 750 }}>
-            {tenantNome !== "—" ? tenantNome : "Acesso rápido"}
+            Bem-vindo, {nome !== "—" ? nome : "—"}
+          </div>
+
+          {/* ✅ linha nova */}
+          <div style={{ marginTop: 4, color: "var(--textDim)", opacity: 0.85, fontWeight: 700 }}>
+            {tenantNome} · {role === "admin" ? "Admin" : "Membro"}
           </div>
         </div>
       </div>
@@ -151,6 +186,7 @@ export default function HomePage() {
               <div style={{ fontSize: 20, fontWeight: 950 }}>{c.title}</div>
               <div style={{ marginTop: 8, opacity: 0.9, lineHeight: 1.35 }}>{c.desc}</div>
             </div>
+
             <div style={{ marginTop: 14, color: "var(--accent)", fontWeight: 950 }}>
               Abrir <span style={{ opacity: 0.8 }}>→</span>
             </div>
