@@ -5,17 +5,23 @@ import { useEffect, useMemo, useState } from "react";
 import { usePathname } from "next/navigation";
 import { supabaseBrowser } from "../../lib/supabase/client";
 
-type NavItem = { href: string; label: string };
+type Role = "admin" | "membro";
+
+type NavItem = {
+  href: string;
+  label: string;
+  audience: Role[];
+};
 
 const NAV: NavItem[] = [
-  { href: "/", label: "Início" },
-  { href: "/cultos", label: "Cultos & Escalas" },
-  { href: "/agenda", label: "Agenda" },
-  { href: "/membros", label: "Membros" },
-  { href: "/departamentos", label: "Departamentos" },
-  { href: "/funcoes", label: "Funções" },
-  { href: "/definicoes/aparencia", label: "Aparência" },
-  { href: "/me", label: "Perfil" }
+  { href: "/", label: "Início", audience: ["admin", "membro"] },
+  { href: "/cultos", label: "Cultos & Escalas", audience: ["admin", "membro"] },
+  { href: "/agenda", label: "Agenda", audience: ["admin", "membro"] },
+  { href: "/membros", label: "Membros", audience: ["admin"] },
+  { href: "/departamentos", label: "Departamentos", audience: ["admin"] },
+  { href: "/funcoes", label: "Funções", audience: ["admin"] },
+  { href: "/definicoes/aparencia", label: "Aparência", audience: ["admin"] },
+  { href: "/me", label: "Perfil", audience: ["admin", "membro"] }
 ];
 
 function Hamburger({ open }: { open: boolean }) {
@@ -42,6 +48,7 @@ export default function AppHeader() {
 
   const [open, setOpen] = useState(false);
   const [tenantNome, setTenantNome] = useState<string>("—");
+  const [role, setRole] = useState<Role>("membro");
 
   // não mostrar header no login
   if (pathname?.startsWith("/login")) return null;
@@ -92,14 +99,20 @@ export default function AppHeader() {
         if (!userId) {
           if (!active) return;
           setTenantNome("—");
+          setRole("membro");
           // se não há sessão, não mexe no accent (fica default do layout)
           return;
         }
 
-        const uRes = await supabase.from("usuarios").select("igreja_id").eq("id", userId).single();
+        const uRes = await supabase.from("usuarios").select("igreja_id, role").eq("id", userId).single();
         if (uRes.error) throw uRes.error;
 
         const igrejaId = (uRes.data?.igreja_id as string | null) || null;
+        const currentRole = (uRes.data?.role as Role | null) || "membro";
+
+        if (!active) return;
+        setRole(currentRole);
+
         if (!igrejaId) throw new Error("Sem igreja_id no utilizador.");
 
         const iRes = await supabase.from("igrejas").select("nome, cor_primaria").eq("id", igrejaId).single();
@@ -132,6 +145,8 @@ export default function AppHeader() {
     if (href === "/") return pathname === "/";
     return pathname?.startsWith(href);
   };
+
+  const visibleNav = NAV.filter((item) => item.audience.includes(role));
 
   async function logout() {
     try {
@@ -204,7 +219,7 @@ export default function AppHeader() {
             flexWrap: "wrap"
           }}
         >
-          {NAV.map((item) => (
+          {visibleNav.map((item) => (
             <a
               key={item.href}
               href={item.href}
@@ -301,7 +316,7 @@ export default function AppHeader() {
               }}
             >
               <div style={{ display: "grid", gap: 10 }}>
-                {NAV.map((item) => (
+                {visibleNav.map((item) => (
                   <a
                     key={item.href}
                     href={item.href}
