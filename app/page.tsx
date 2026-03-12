@@ -22,7 +22,7 @@ const CARDS: Card[] = [
   { title: "Departamentos", desc: "Gerir departamentos e associações.", href: "/departamentos", audience: ["admin"] },
   { title: "Funções", desc: "Gerir funções e inativar quando necessário.", href: "/funcoes", audience: ["admin"] },
   { title: "Perfil", desc: "Os teus dados e preferências.", href: "/me", audience: ["admin", "membro"] },
-  { title: "Aparência", desc: "Escolher a cor de contraste (accent).", href: "/definicoes/aparencia", audience: ["admin", "membro"] }
+  { title: "Aparência", desc: "Escolher a cor de contraste (accent).", href: "/definicoes/aparencia", audience: ["admin"] }
 ];
 
 export default function HomePage() {
