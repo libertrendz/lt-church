@@ -92,14 +92,29 @@ export default function CultosHubPage() {
   const [openMonths, setOpenMonths] = useState<Record<string, boolean>>({});
 
   async function requireSessionOrRedirect() {
-    const { data } = await supabase.auth.getSession();
-    if (!data.session) {
-      router.replace("/login");
-      return false;
-    }
-    return true;
+  const { data } = await supabase.auth.getSession();
+
+  if (!data.session) {
+    router.replace("/login");
+    return false;
   }
 
+  // 🔒 valida role (admin only)
+  const userId = data.session.user.id;
+
+  const uRes = await supabase
+    .from("usuarios")
+    .select("role")
+    .eq("id", userId)
+    .single();
+
+  if (uRes.error || uRes.data?.role !== "admin") {
+    router.replace("/");
+    return false;
+  }
+
+  return true;
+}
   async function logout() {
     await supabase.auth.signOut();
     router.replace("/login");
